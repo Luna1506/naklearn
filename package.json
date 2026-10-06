@@ -8,13 +8,15 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && node --test scripts/release.test.ts",
     "typecheck": "tsc -p tsconfig.json",
     "dev:server": "npm run dev -w @naklearn/server",
     "dev:client": "npm run dev -w @naklearn/client",
     "build": "npm run build -w @naklearn/client",
     "android:build": "npm run android:build -w @naklearn/client",
-    "android:install": "npm run android:install -w @naklearn/client"
+    "android:install": "npm run android:install -w @naklearn/client",
+    "release": "node scripts/release.ts",
+    "release:key": "node scripts/release.ts key"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
