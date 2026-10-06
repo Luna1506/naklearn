@@ -66,3 +66,7 @@ tr.suspended { opacity: 0.5; }
 .summary > summary h2 { display: inline; }
 .summary .md { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px 16px; margin-top: 8px; }
 button.small { font-size: 0.8rem; padding: 3px 8px; }
+.qr { width: min(320px, 80vw); background: #fff; padding: 12px; border-radius: 12px; margin: 16px 0; }
+.qr svg { width: 100%; height: auto; display: block; }
+.steps li { margin: 6px 0; }
+.token { word-break: break-all; }

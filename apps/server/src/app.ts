@@ -12,6 +12,8 @@ import { enqueueDeck, listJobs, regenerateDeck, retryJob, type Worker } from './
 import * as repo from './repo.ts';
 import { answer, getNext, getOverview, undo } from './study.ts';
 import { applyPush, pullSince } from './sync.ts';
+import QRCode from 'qrcode';
+import { detectPublicUrl, pairingPayload } from './pair.ts';
 import { SyncRequestSchema } from '@naklearn/core';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
@@ -62,6 +64,8 @@ export function buildApp(deps: {
   cfg: Config;
   worker: Pick<Worker, 'wake' | 'status' | 'resume'>;
   now?: () => number;
+  /** Ermittelt die Adresse fürs Handy (Standard: Tailscale). */
+  publicUrl?: () => Promise<string | null>;
 }): FastifyInstance {
   const { db, cfg, worker } = deps;
   const now = deps.now ?? Date.now;
@@ -249,6 +253,15 @@ export function buildApp(deps: {
       throw new NotFound((e as Error).message);
     }
     return { ok: true };
+  });
+
+  // ---- Koppeln ----
+  app.get('/api/pair', async (req, reply) => {
+    if (!LOOPBACK.has(req.socket.remoteAddress ?? '')) return reply.code(403).send({ error: 'Koppeln nur am Laptop' });
+    const url = await (deps.publicUrl ?? (() => detectPublicUrl(cfg.port, process.env)))();
+    const payload = url ? pairingPayload(url, cfg.token) : null;
+    const qrSvg = payload ? await QRCode.toString(payload, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }) : null;
+    return { url, token: cfg.token, payload, qrSvg };
   });
 
   // ---- Sync ----

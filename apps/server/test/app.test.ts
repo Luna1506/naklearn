@@ -19,7 +19,7 @@ async function setup() {
   const db = memDb();
   let woke = 0;
   const worker = { wake: () => void woke++, resume: () => {}, status: () => ({ state: 'idle' as const, pauseReason: null, pausedUntil: null, current: null, queued: 0 }) };
-  const app = buildApp({ db, cfg, worker });
+  const app = buildApp({ db, cfg, worker, publicUrl: async () => 'http://test.ts.net:8742' });
   return { app, db, cfg, woke: () => woke };
 }
 
@@ -122,6 +122,16 @@ describe('HTTP-API', () => {
     });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().pull.modules[0].name).toBe('M');
+  });
+
+  it('GET /api/pair nur vom Laptop selbst', async () => {
+    const { app } = await setup();
+    const local = await app.inject({ method: 'GET', url: '/api/pair' });
+    expect(local.statusCode).toBe(200);
+    expect(local.json()).toMatchObject({ token: 'secret', url: 'http://test.ts.net:8742' });
+    expect(local.json().qrSvg).toContain('<svg');
+    const remote = await app.inject({ method: 'GET', url: '/api/pair', headers: { authorization: 'Bearer secret' }, remoteAddress: '100.64.1.2' });
+    expect(remote.statusCode).toBe(403);
   });
 
   it('Lernablauf: nächste Karte, bewerten, rückgängig', async () => {

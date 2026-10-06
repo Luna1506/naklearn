@@ -9,6 +9,7 @@ describe('parseRoute', () => {
     ['#/deck/d1', { name: 'deck', params: { id: 'd1' } }],
     ['#/browse?moduleId=m1&q=gulf', { name: 'browse', params: { moduleId: 'm1', q: 'gulf' } }],
     ['#/study?deckId=d1&title=Ch%201', { name: 'study', params: { deckId: 'd1', title: 'Ch 1' } }],
+    ['#/pair', { name: 'pair', params: {} }],
     ['#/unbekannt', { name: 'home', params: {} }],
   ])('%s', (hash, expected) => {
     expect(parseRoute(hash)).toEqual(expected);

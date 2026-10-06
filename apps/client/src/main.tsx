@@ -6,6 +6,7 @@ import { BrowserPage } from './pages/BrowserPage.tsx';
 import { DeckPage } from './pages/DeckPage.tsx';
 import { Home } from './pages/Home.tsx';
 import { ModulePage } from './pages/ModulePage.tsx';
+import { PairPage } from './pages/PairPage.tsx';
 import { StudyPage } from './pages/StudyPage.tsx';
 import { useRoute } from './router.ts';
 
@@ -16,6 +17,7 @@ function App() {
     case 'deck': return <DeckPage id={route.params.id!} />;
     case 'browse': return <BrowserPage params={route.params} />;
     case 'study': return <StudyPage params={route.params} />;
+    case 'pair': return <PairPage />;
     default: return <Home />;
   }
 }

@@ -29,6 +29,7 @@ export function Home() {
           Heute lernen · {totalDue} Karten
         </button>
         <a href={href('browse')}>Alle Karten durchsuchen</a>
+        <a href={href('pair')}>Handy koppeln</a>
       </section>
 
       <section className="grid">

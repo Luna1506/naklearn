@@ -44,6 +44,7 @@ function qs(params: Record<string, string | undefined>): string {
 
 export const api = {
   overview: () => request<Overview>('/api/overview'),
+  pair: () => request<{ url: string | null; token: string; payload: string | null; qrSvg: string | null }>('/api/pair'),
   createModule: (m: { name: string; language: Language; examDate?: string | null; newPerDay?: number }) =>
     request<Module>('/api/modules', json('POST', m)),
   module: (id: string) => request<{ module: Module; decks: DeckWithCount[] }>(`/api/modules/${id}`),
