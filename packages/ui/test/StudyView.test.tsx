@@ -101,6 +101,20 @@ describe('StudyView', () => {
     confirm.mockRestore();
   });
 
+  it('funktioniert mit Datenquellen, deren slideUrl `this` nutzt (Klassenmethoden)', async () => {
+    class ClassSource {
+      private base = '/img';
+      private inner = fakeSource([card('1')]);
+      next = this.inner.next; answer = this.inner.answer; undo = this.inner.undo;
+      setSuspended = this.inner.setSuspended; updateNote = this.inner.updateNote; deleteNote = this.inner.deleteNote;
+      slideUrl(deckId: string, page: number) { return `${this.base}/${deckId}/${page}.jpg`; }
+    }
+    render(<StudyView source={new ClassSource()} scope={{}} title="Heute" onExit={() => {}} />);
+    await screen.findByText('Frage 1');
+    fireEvent.click(screen.getByRole('button', { name: /Antwort zeigen/ }));
+    expect(screen.getByRole('img', { name: 'Folie 2' }).getAttribute('src')).toBe('/img/d/2.jpg');
+  });
+
   it('zeigt den Fertig-Zustand und erlaubt Rückgängig', async () => {
     const src = fakeSource([card('1')]);
     render(<StudyView source={src} scope={{}} title="Heute" onExit={() => {}} />);

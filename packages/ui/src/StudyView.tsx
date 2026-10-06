@@ -176,7 +176,7 @@ export function StudyView({
               <>
                 <hr />
                 <Markdown text={card.back} className="back" />
-                <SlideStrip deckId={card.deckId} pages={card.slides} slideUrl={source.slideUrl} />
+                <SlideStrip deckId={card.deckId} pages={card.slides} slideUrl={(deckId, page) => source.slideUrl(deckId, page)} />
               </>
             )}
           </article>
