@@ -98,6 +98,8 @@ export function StudyView({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (editing || bigFront) return;
+      // Browser-Kürzel (Strg+P …) und gedrückt gehaltene Tasten nie als Lernaktion werten.
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
       if (e.key === ' ' || e.key === 'Enter') {

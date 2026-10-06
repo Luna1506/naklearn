@@ -65,6 +65,26 @@ describe('StudyView', () => {
     expect(src.answered).toEqual([]);
   });
 
+  it('ignoriert Tastenkürzel mit Strg/Alt/Meta (z. B. Strg+P zum Drucken)', async () => {
+    const src = fakeSource([card('1')]);
+    render(<StudyView source={src} scope={{}} title="Heute" onExit={() => {}} />);
+    await screen.findByText('Frage 1');
+    fireEvent.click(screen.getByRole('button', { name: /Antwort zeigen/ }));
+    await act(async () => { fireEvent.keyDown(window, { key: 'p', ctrlKey: true }); });
+    await act(async () => { fireEvent.keyDown(window, { key: '3', altKey: true }); });
+    expect(src.setSuspended).not.toHaveBeenCalled();
+    expect(src.answered).toEqual([]);
+  });
+
+  it('ignoriert automatisch wiederholte Tasten (gedrückt gehaltene Leertaste)', async () => {
+    const src = fakeSource([card('1'), card('2')]);
+    render(<StudyView source={src} scope={{}} title="Heute" onExit={() => {}} />);
+    await screen.findByText('Frage 1');
+    await act(async () => { fireEvent.keyDown(window, { key: ' ' }); });
+    await act(async () => { fireEvent.keyDown(window, { key: ' ', repeat: true }); });
+    expect(src.answered).toEqual([]);
+  });
+
   it('zeigt den Fertig-Zustand und erlaubt Rückgängig', async () => {
     const src = fakeSource([card('1')]);
     render(<StudyView source={src} scope={{}} title="Heute" onExit={() => {}} />);
