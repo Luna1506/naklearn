@@ -1,0 +1,19 @@
+{
+  "name": "kartei",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "tsc -p tsconfig.json",
+    "dev:server": "npm run dev -w @kartei/server",
+    "dev:client": "npm run dev -w @kartei/client",
+    "build": "npm run build -w @kartei/client"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@kartei/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "TZ=Asia/Seoul vitest run"
+  },
+  "dependencies": {
+    "ts-fsrs": "^5.4.2",
+    "uuidv7": "^1.2.1",
+    "zod": "^4.6.5"
+  }
+}
