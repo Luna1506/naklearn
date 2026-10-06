@@ -10,7 +10,7 @@ import { memDb } from './helpers.ts';
 import { makePdf } from './makePdf.ts';
 
 async function setup() {
-  const dataDir = await mkdtemp(path.join(tmpdir(), 'kartei-app-'));
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'naklearn-app-'));
   for (const d of ['pdfs', 'slides', 'backups']) mkdirSync(path.join(dataDir, d), { recursive: true });
   const cfg: Config = {
     dataDir, port: 0, host: '127.0.0.1', token: 'secret', deviceId: 'laptop',
@@ -24,7 +24,7 @@ async function setup() {
 }
 
 function multipart(files: { name: string; data: Buffer }[]) {
-  const b = '----kartei' + Date.now();
+  const b = '----naklearn' + Date.now();
   const parts = files.map((f) =>
     Buffer.concat([
       Buffer.from(`--${b}\r\nContent-Disposition: form-data; name="files"; filename="${f.name}"\r\nContent-Type: application/octet-stream\r\n\r\n`),
@@ -133,7 +133,7 @@ describe('HTTP-API', () => {
     const img = await app.inject({ method: 'GET', url: `/api/slides/${deck.id}/1.jpg` });
     expect(img.statusCode).toBe(200);
     expect(img.headers['content-type']).toBe('image/jpeg');
-    expect((await app.inject({ method: 'GET', url: `/api/slides/${deck.id}/..%2F..%2Fkartei.db` })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: `/api/slides/${deck.id}/..%2F..%2Fnaklearn.db` })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: `/api/slides/${deck.id}/2.jpg` })).statusCode).toBe(404);
   });
 });

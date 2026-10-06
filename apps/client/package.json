@@ -1,5 +1,5 @@
 {
-  "name": "@kartei/client",
+  "name": "@naklearn/client",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,8 +9,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@kartei/core": "*",
-    "@kartei/ui": "*",
+    "@naklearn/core": "*",
+    "@naklearn/ui": "*",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

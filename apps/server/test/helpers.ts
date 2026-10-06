@@ -1,4 +1,4 @@
-import { CORE_MIGRATIONS } from '@kartei/core';
+import { CORE_MIGRATIONS } from '@naklearn/core';
 import { DatabaseSync } from 'node:sqlite';
 import { migrate, type Db } from '../src/db.ts';
 

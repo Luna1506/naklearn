@@ -1,4 +1,4 @@
-import type { Grade } from '@kartei/core';
+import type { Grade } from '@naklearn/core';
 
 const LABELS: Record<Grade, string> = { 1: 'Nochmal', 2: 'Schwer', 3: 'Gut', 4: 'Einfach' };
 

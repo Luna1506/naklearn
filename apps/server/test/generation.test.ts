@@ -31,7 +31,7 @@ const fakeRender = async () =>
 
 async function setup(script: Partial<Record<number, ClaudeResult>> = {}) {
   const db = memDb();
-  const dataDir = await mkdtemp(path.join(tmpdir(), 'kartei-gen-'));
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'naklearn-gen-'));
   const mod = repo.createModule(db, { name: 'UIUX', language: 'en' });
   const deck = repo.createDeck(db, { moduleId: mod.id, title: 'Ch1', pdfSha256: 'sha' });
   let now = 1_000_000;

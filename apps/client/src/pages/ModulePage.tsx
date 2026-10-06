@@ -1,4 +1,4 @@
-import type { Language, Module } from '@kartei/core';
+import type { Language, Module } from '@naklearn/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type DeckWithCount } from '../api.ts';
 import { href, navigate } from '../router.ts';
@@ -121,7 +121,7 @@ export function ModulePage({ id }: { id: string }) {
           <label>Neue Karten pro Tag (mindestens) <input type="number" min={0} max={500} value={form.newPerDay} onChange={(e) => setForm({ ...form, newPerDay: Number(e.target.value) })} /></label>
           <button className="primary" type="submit">Speichern</button>
         </form>
-        <p className="muted small">Die Sprache gilt für neu erzeugte Karten. Mit Prüfungsdatum verteilt kartei die neuen Karten so, dass du 3 Tage vorher alles gesehen hast.</p>
+        <p className="muted small">Die Sprache gilt für neu erzeugte Karten. Mit Prüfungsdatum verteilt NAKLearn die neuen Karten so, dass du 3 Tage vorher alles gesehen hast.</p>
         <button
           className="danger"
           onClick={async () => {

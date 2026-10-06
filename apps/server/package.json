@@ -1,17 +1,17 @@
 {
-  "name": "@kartei/server",
+  "name": "@naklearn/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "TZ=Asia/Seoul vitest run",
-    "dev": "KARTEI_DATA_DIR=../../.devdata node --watch src/main.ts",
+    "dev": "NAKLEARN_DATA_DIR=../../.devdata node --watch src/main.ts",
     "start": "node src/main.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.2",
     "@fastify/static": "^10.1.5",
-    "@kartei/core": "*",
+    "@naklearn/core": "*",
     "fastify": "^5.12.5",
     "zod": "^4.6.5"
   }

@@ -1,32 +1,32 @@
 {
-  description = "kartei – Lernkarten aus Foliensätzen";
+  description = "NAKLearn – Lernkarten aus Foliensätzen (NORDAKADEMIE)";
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   outputs = { self, nixpkgs }:
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
-      kartei = pkgs.buildNpmPackage {
-        pname = "kartei";
+      naklearn = pkgs.buildNpmPackage {
+        pname = "naklearn";
         version = "0.1.0";
         src = self;
         nodejs = pkgs.nodejs_24;
-        npmDepsHash = "sha256-b5nUQM/3XTP11lUDrutHn2pAhTJtB3QFY3edLFxYRXA=";
+        npmDepsHash = "sha256-m2ClP6Sh1vQ67A15BOHgM9+NU7zfv/YSyb1y2x1Xogg=";
         npmBuildScript = "build";
         dontNpmPrune = true;
         nativeBuildInputs = [ pkgs.makeWrapper ];
         installPhase = ''
           runHook preInstall
-          mkdir -p $out/lib/kartei $out/bin
-          cp -r package.json node_modules packages apps $out/lib/kartei/
-          makeWrapper ${pkgs.nodejs_24}/bin/node $out/bin/kartei-server \
-            --add-flags $out/lib/kartei/apps/server/src/main.ts \
+          mkdir -p $out/lib/naklearn $out/bin
+          cp -r package.json node_modules packages apps $out/lib/naklearn/
+          makeWrapper ${pkgs.nodejs_24}/bin/node $out/bin/naklearn-server \
+            --add-flags $out/lib/naklearn/apps/server/src/main.ts \
             --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.poppler-utils ]} \
-            --set-default KARTEI_WEB_DIR $out/lib/kartei/apps/client/dist
+            --set-default NAKLEARN_WEB_DIR $out/lib/naklearn/apps/client/dist
           runHook postInstall
         '';
       };
     in {
-      packages.${system}.default = kartei;
+      packages.${system}.default = naklearn;
       homeManagerModules.default = import ./nix/hm-module.nix self;
       devShells.${system}.default = pkgs.mkShell {
         packages = [ pkgs.nodejs_24 pkgs.poppler-utils pkgs.prefetch-npm-deps ];

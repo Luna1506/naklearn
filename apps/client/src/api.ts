@@ -1,5 +1,5 @@
-import type { Card, Deck, Grade, Language, Module, Note, NoteKind, QueueCounts, Scope, StudyCard } from '@kartei/core';
-import type { StudyDataSource } from '@kartei/ui';
+import type { Card, Deck, Grade, Language, Module, Note, NoteKind, QueueCounts, Scope, StudyCard } from '@naklearn/core';
+import type { StudyDataSource } from '@naklearn/ui';
 
 export interface ModuleOverview {
   moduleId: string; name: string; language: Language; examDate: string | null; newPerDay: number;

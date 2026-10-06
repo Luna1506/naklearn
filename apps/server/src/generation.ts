@@ -1,7 +1,7 @@
 import {
   ChunkOutputSchema, SynthesisOutputSchema, clozeOrdinals, newId,
   type GeneratedNote, type NoteKind,
-} from '@kartei/core';
+} from '@naklearn/core';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -193,7 +193,7 @@ export function createWorker(deps: {
   }
 
   async function callClaude(prompt: string, jsonSchema: object, deckId: string): Promise<ClaudeResult> {
-    const cwd = await mkdtemp(path.join(tmpdir(), 'kartei-claude-'));
+    const cwd = await mkdtemp(path.join(tmpdir(), 'naklearn-claude-'));
     try {
       return await runClaude({ prompt, jsonSchema, addDirs: [slidesDir(deckId)], cwd });
     } finally {
@@ -301,7 +301,7 @@ export function createWorker(deps: {
   async function loop() {
     while (!stopped) {
       const worked = await tick().catch((e) => {
-        console.error('[kartei] Worker-Fehler', e);
+        console.error('[naklearn] Worker-Fehler', e);
         return false;
       });
       if (!worked && !stopped) {

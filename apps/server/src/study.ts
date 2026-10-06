@@ -2,7 +2,7 @@ import {
   effectiveDueMs, effectiveLogs, formatInterval, moduleStats, newId, nextCard, previewIntervals, replay,
   streak, studyDay, toStudyCard,
   type Grade, type Language, type ModuleStats, type QueueCounts, type QueueModule, type Scope, type StudyCard,
-} from '@kartei/core';
+} from '@naklearn/core';
 import { tx, type Db } from './db.ts';
 import * as repo from './repo.ts';
 

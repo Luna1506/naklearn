@@ -1,4 +1,4 @@
-import { addDays, hashString } from '@kartei/core';
+import { addDays, hashString } from '@naklearn/core';
 import { describe, expect, it } from 'vitest';
 import * as repo from '../src/repo.ts';
 import { answer, getNext, getOverview, undo } from '../src/study.ts';

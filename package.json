@@ -1,5 +1,5 @@
 {
-  "name": "kartei",
+  "name": "naklearn",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,9 +7,9 @@
   "scripts": {
     "test": "npm run test --workspaces --if-present",
     "typecheck": "tsc -p tsconfig.json",
-    "dev:server": "npm run dev -w @kartei/server",
-    "dev:client": "npm run dev -w @kartei/client",
-    "build": "npm run build -w @kartei/client"
+    "dev:server": "npm run dev -w @naklearn/server",
+    "dev:client": "npm run dev -w @naklearn/client",
+    "build": "npm run build -w @naklearn/client"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

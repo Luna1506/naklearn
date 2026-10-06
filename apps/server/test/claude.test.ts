@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 async function call(mode: string) {
-  const dir = await mkdtemp(path.join(tmpdir(), 'kartei-claude-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'naklearn-claude-'));
   process.env.FAKE_CLAUDE_MODE = mode;
   process.env.FAKE_CLAUDE_LOG = path.join(dir, 'log.jsonl');
   const run = createClaudeRunner({ claudePath: FAKE, model: 'sonnet' });

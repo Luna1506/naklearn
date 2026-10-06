@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import type { StudyCard } from '@kartei/core';
+import type { StudyCard } from '@naklearn/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { StudyDataSource } from '../src/source.ts';
 import { StudyView } from '../src/StudyView.tsx';

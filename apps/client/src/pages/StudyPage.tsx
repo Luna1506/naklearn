@@ -1,4 +1,4 @@
-import { StudyView } from '@kartei/ui';
+import { StudyView } from '@naklearn/ui';
 import { useMemo } from 'react';
 import { HttpDataSource } from '../api.ts';
 import { navigate } from '../router.ts';

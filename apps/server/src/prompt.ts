@@ -1,4 +1,4 @@
-import { ChunkOutputSchema, SynthesisOutputSchema, type Language } from '@kartei/core';
+import { ChunkOutputSchema, SynthesisOutputSchema, type Language } from '@naklearn/core';
 import { z } from 'zod';
 
 /** JSON-Schema ohne `$schema`-Angabe: claude validiert nur gegen seinen Standard-Draft. */

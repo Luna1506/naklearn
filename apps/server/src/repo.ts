@@ -2,7 +2,7 @@ import {
   clozeOrdinals, emptyState, newId,
   type Card, type CardState, type Deck, type DeckStatus, type Language, type Module, type Note,
   type NoteKind, type NoteSource, type QueueCard, type RevlogEntry, type Slide,
-} from '@kartei/core';
+} from '@naklearn/core';
 import { tx, type Db } from './db.ts';
 
 // node:sqlite liefert Zeilen als untypisierte Objekte.

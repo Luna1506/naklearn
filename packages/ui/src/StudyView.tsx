@@ -1,4 +1,4 @@
-import type { Grade, QueueCounts, Scope, StudyCard } from '@kartei/core';
+import type { Grade, QueueCounts, Scope, StudyCard } from '@naklearn/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Markdown } from './Markdown.tsx';
 import { NoteEditor } from './NoteEditor.tsx';

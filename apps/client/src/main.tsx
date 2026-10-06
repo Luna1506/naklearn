@@ -1,4 +1,4 @@
-import '@kartei/ui/study.css';
+import '@naklearn/ui/study.css';
 import './styles.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

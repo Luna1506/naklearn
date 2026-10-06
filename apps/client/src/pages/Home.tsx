@@ -1,4 +1,4 @@
-import type { Language } from '@kartei/core';
+import type { Language } from '@naklearn/core';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Overview } from '../api.ts';
 import { href, navigate } from '../router.ts';
@@ -19,7 +19,7 @@ export function Home() {
   return (
     <main className="page">
       <header className="topbar">
-        <h1>kartei</h1>
+        <h1>NAKLearn</h1>
         {ov && <span className="muted">Heute gelernt: {ov.studiedToday} · Serie: {ov.streak} {ov.streak === 1 ? 'Tag' : 'Tage'}</span>}
       </header>
       {error && <p className="error">{error}</p>}

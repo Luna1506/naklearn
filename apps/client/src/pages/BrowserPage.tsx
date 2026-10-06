@@ -1,5 +1,5 @@
-import type { NoteKind } from '@kartei/core';
-import { Markdown, NoteEditor } from '@kartei/ui';
+import type { NoteKind } from '@naklearn/core';
+import { Markdown, NoteEditor } from '@naklearn/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type NoteListItem } from '../api.ts';
 import { href } from '../router.ts';

@@ -1,4 +1,4 @@
-import type { Grade, QueueCounts, Scope, StudyCard } from '@kartei/core';
+import type { Grade, QueueCounts, Scope, StudyCard } from '@naklearn/core';
 
 export interface StudyDataSource {
   next(scope: Scope): Promise<{ card: StudyCard | null; counts: QueueCounts }>;

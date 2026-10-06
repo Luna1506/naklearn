@@ -1,5 +1,5 @@
-import type { Deck } from '@kartei/core';
-import { Markdown, SlideStrip } from '@kartei/ui';
+import type { Deck } from '@naklearn/core';
+import { Markdown, SlideStrip } from '@naklearn/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Job, type NoteListItem, type WorkerStatus } from '../api.ts';
 import { href, navigate } from '../router.ts';

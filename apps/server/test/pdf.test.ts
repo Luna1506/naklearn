@@ -7,7 +7,7 @@ import { normalizeText, pageFromImageName, renderPdf } from '../src/pdf.ts';
 import { makePdf } from './makePdf.ts';
 
 async function tmp() {
-  return mkdtemp(path.join(tmpdir(), 'kartei-pdf-'));
+  return mkdtemp(path.join(tmpdir(), 'naklearn-pdf-'));
 }
 
 describe('renderPdf', () => {

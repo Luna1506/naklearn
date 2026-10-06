@@ -7,7 +7,7 @@ import { openDb } from './db.ts';
 import { createWorker, resetRunningJobs } from './generation.ts';
 
 const cfg = loadConfig();
-const db = openDb(path.join(cfg.dataDir, 'kartei.db'));
+const db = openDb(path.join(cfg.dataDir, 'naklearn.db'));
 resetRunningJobs(db);
 
 const worker = createWorker({
@@ -20,9 +20,9 @@ worker.start();
 const backup = () => {
   try {
     const f = backupIfDue(db, path.join(cfg.dataDir, 'backups'), Date.now());
-    if (f) console.log(`[kartei] Sicherung: ${f}`);
+    if (f) console.log(`[naklearn] Sicherung: ${f}`);
   } catch (e) {
-    console.error('[kartei] Sicherung fehlgeschlagen', e);
+    console.error('[naklearn] Sicherung fehlgeschlagen', e);
   }
 };
 backup();
@@ -30,7 +30,7 @@ setInterval(backup, 3_600_000).unref();
 
 const app = buildApp({ db, cfg, worker });
 await app.listen({ port: cfg.port, host: cfg.host });
-console.log(`[kartei] läuft auf http://localhost:${cfg.port} (Daten: ${cfg.dataDir}, Web: ${cfg.webDir ?? 'kein Build'})`);
+console.log(`[naklearn] läuft auf http://localhost:${cfg.port} (Daten: ${cfg.dataDir}, Web: ${cfg.webDir ?? 'kein Build'})`);
 
 const shutdown = async () => {
   await worker.stop();
