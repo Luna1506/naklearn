@@ -1,0 +1,64 @@
+:root {
+  --bg: #f6f6f3; --surface: #ffffff; --fg: #1d1d1f; --muted: #6b6b70; --border: #dcdcd6; --code: #efefea;
+  --accent: #5b4bd6; --accent-soft: #ebe8ff;
+  --new: #2f6fde; --learning: #d64545; --review: #2c9a5a;
+  --again: #d64545; --hard: #c98a1a; --good: #2c9a5a; --easy: #2f6fde;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141416; --surface: #1e1e22; --fg: #ececf0; --muted: #9a9aa3; --border: #34343b; --code: #2a2a30;
+    --accent: #a89bff; --accent-soft: #2e2a52;
+    --new: #6ea0ff; --learning: #ff7b7b; --review: #5fd08f;
+    --again: #ff7b7b; --hard: #e3b04b; --good: #5fd08f; --easy: #6ea0ff;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+a { color: var(--accent); }
+button, input, select { font: inherit; color: inherit; }
+button { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--again); border-color: var(--again); }
+button.link { border: none; background: none; color: var(--accent); padding: 0; }
+button.big { font-size: 1.15rem; padding: 14px 22px; }
+input, select { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.page { max-width: 1000px; margin: 0 auto; padding: 16px; }
+.topbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.topbar h1 { flex: 1; margin: 0; font-size: 1.5rem; }
+.hero { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin: 16px 0 24px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.tile { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; color: inherit; text-decoration: none; }
+.tile:hover { border-color: var(--accent); }
+.tile-head { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.tile .counts { display: flex; gap: 10px; font-size: 0.9rem; margin-bottom: 8px; }
+.badge { font-size: 0.7rem; border: 1px solid var(--border); border-radius: 6px; padding: 0 6px; color: var(--muted); }
+.progress { height: 6px; background: var(--code); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+.progress > div { height: 100%; background: var(--review); }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+.error { color: var(--again); }
+.warn { color: var(--hard); }
+.info { background: var(--accent-soft); padding: 8px 12px; border-radius: 8px; }
+.card-form { margin-top: 28px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+.card-form form { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.card-form label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--muted); gap: 4px; }
+.dropzone { border: 2px dashed var(--border); border-radius: 14px; padding: 28px; text-align: center; cursor: pointer; margin: 12px 0 24px; }
+.dropzone.dragging { border-color: var(--accent); background: var(--accent-soft); }
+.table { width: 100%; border-collapse: collapse; }
+.table td, .table th { border-bottom: 1px solid var(--border); padding: 8px; text-align: left; vertical-align: top; }
+.status-error, .job-failed { color: var(--again); }
+.status-ready, .job-done { color: var(--review); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.note-list .note { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+.note summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+.md.inline, .md.inline p { display: inline; margin: 0; }
+.notes-table .actions { white-space: nowrap; }
+.notes-table .actions button { margin-left: 4px; }
+tr.suspended { opacity: 0.5; }
+@media (max-width: 640px) {
+  .notes-table td:nth-child(3) { display: none; }
+  .notes-table .actions { white-space: normal; }
+}
