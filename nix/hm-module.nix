@@ -21,10 +21,15 @@ in
       default = "${config.home.homeDirectory}/.local/bin/claude";
       description = "Pfad zur claude-CLI (nutzt deren Login).";
     };
-    claudeModel = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Optionales Modell für die Kartenerzeugung (null = Standard des Accounts).";
+    summaryModel = lib.mkOption {
+      type = lib.types.str;
+      default = "sonnet";
+      description = "Modell für die Zusammenfassung der Foliensätze.";
+    };
+    cardsModel = lib.mkOption {
+      type = lib.types.str;
+      default = "opus";
+      description = "Modell für die Kartenerzeugung.";
     };
   };
 
@@ -41,7 +46,9 @@ in
           "NAKLEARN_DATA_DIR=${cfg.dataDir}"
           "NAKLEARN_CLAUDE=${cfg.claudePath}"
           "PATH=${config.home.homeDirectory}/.local/bin:/etc/profiles/per-user/${config.home.username}/bin:/run/current-system/sw/bin"
-        ] ++ lib.optional (cfg.claudeModel != null) "NAKLEARN_MODEL=${cfg.claudeModel}";
+          "NAKLEARN_SUMMARY_MODEL=${cfg.summaryModel}"
+          "NAKLEARN_CARDS_MODEL=${cfg.cardsModel}"
+        ];
         Restart = "on-failure";
         RestartSec = 5;
       };

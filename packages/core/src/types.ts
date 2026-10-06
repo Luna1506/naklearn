@@ -24,6 +24,8 @@ export interface Deck {
   pageCount: number;
   status: DeckStatus;
   error: string | null;
+  /** Prüfungsorientierte Zusammenfassung (Markdown), Grundlage der Karten. */
+  summary: string | null;
   position: number;
   deleted: boolean;
   updatedAt: number;

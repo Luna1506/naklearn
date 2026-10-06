@@ -1,30 +1,35 @@
 import {
-  ChunkOutputSchema, SynthesisOutputSchema, clozeOrdinals, newId,
+  CardsOutputSchema, SummaryOutputSchema, clozeOrdinals, limitClozeGaps, newId,
   type GeneratedNote, type NoteKind,
 } from '@naklearn/core';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { ClaudeResult, RunClaude } from './claude.ts';
+import type { ClaudeResult, ClaudeUsage, RunClaude } from './claude.ts';
 import { tx, type Db } from './db.ts';
 import { renderPdf, type RenderedSlide } from './pdf.ts';
-import { buildChunkPrompt, buildSynthesisPrompt, chunkJsonSchema, outlineOf, synthesisJsonSchema } from './prompt.ts';
+import { buildCardsPrompt, buildSummaryPrompt, cardsJsonSchema, outlineOf, pickFigurePages, summaryJsonSchema } from './prompt.ts';
 import * as repo from './repo.ts';
 
-export const CHUNK_SIZE = 15;
 export const MAX_ATTEMPTS = 3;
 export const RATE_LIMIT_BACKOFF_MS = [300_000, 900_000, 3_600_000];
-const SYNTHESIS_POSITION_BASE = 1_000_000;
+/** Höchstens so viele Karten pro Folie im Schnitt bzw. zu einer einzelnen Folie. */
+export const CARDS_PER_SLIDE = 1;
+export const MAX_CARDS_PER_SLIDE = 2;
+export const MAX_CLOZE_GAPS = 2;
+export const MAX_FIGURES = 5;
 
 export interface Job {
   id: string;
   deckId: string;
-  kind: 'render' | 'chunk' | 'synthesis';
+  /** 'chunk'/'synthesis' stammen aus dem alten Verfahren und werden nicht mehr ausgeführt. */
+  kind: 'render' | 'summary' | 'cards' | 'chunk' | 'synthesis';
   chunkFrom: number | null;
   chunkTo: number | null;
   status: 'queued' | 'running' | 'done' | 'failed';
   attempts: number;
   error: string | null;
+  usage: ClaudeUsage | null;
   createdAt: number;
 }
 
@@ -49,19 +54,17 @@ type Row = Record<string, any>;
 
 const toJob = (r: Row): Job => ({
   id: r.id, deckId: r.deck_id, kind: r.kind, chunkFrom: r.chunk_from ?? null, chunkTo: r.chunk_to ?? null,
-  status: r.status, attempts: r.attempts, error: r.error ?? null, createdAt: r.created_at,
+  status: r.status, attempts: r.attempts, error: r.error ?? null,
+  usage: r.usage_json ? JSON.parse(r.usage_json) : null, createdAt: r.created_at,
 });
 
-function insertJob(db: Db, deckId: string, kind: Job['kind'], from: number | null, to: number | null, now: number): void {
-  db.prepare("INSERT INTO job (id, deck_id, kind, chunk_from, chunk_to, status, created_at) VALUES (?, ?, ?, ?, ?, 'queued', ?)")
-    .run(newId(), deckId, kind, from, to, now);
+function insertJob(db: Db, deckId: string, kind: Job['kind'], now: number): void {
+  db.prepare("INSERT INTO job (id, deck_id, kind, status, created_at) VALUES (?, ?, ?, 'queued', ?)").run(newId(), deckId, kind, now);
 }
 
-function insertGenerationJobs(db: Db, deckId: string, pageCount: number, chunkSize: number, now: number): void {
-  for (let from = 1; from <= pageCount; from += chunkSize) {
-    insertJob(db, deckId, 'chunk', from, Math.min(pageCount, from + chunkSize - 1), now);
-  }
-  insertJob(db, deckId, 'synthesis', null, null, now);
+function insertGenerationJobs(db: Db, deckId: string, now: number): void {
+  insertJob(db, deckId, 'summary', now);
+  insertJob(db, deckId, 'cards', now);
 }
 
 export function listJobs(db: Db, deckId: string): Job[] {
@@ -70,22 +73,26 @@ export function listJobs(db: Db, deckId: string): Job[] {
 
 export function enqueueDeck(db: Db, deckId: string, now = Date.now()): void {
   tx(db, () => {
-    insertJob(db, deckId, 'render', null, null, now);
+    insertJob(db, deckId, 'render', now);
     repo.updateDeck(db, deckId, { status: 'pending', error: null }, now);
   });
 }
 
-export function regenerateDeck(db: Db, deckId: string, now = Date.now(), chunkSize = CHUNK_SIZE): void {
+/** Erzeugt Zusammenfassung und Karten neu; bewertete Karten bleiben, außer bei `includeReviewed`. */
+export function regenerateDeck(db: Db, deckId: string, now = Date.now(), opts: { includeReviewed?: boolean } = {}): void {
   tx(db, () => {
-    for (const id of repo.unreviewedNoteIds(db, deckId)) repo.deleteNote(db, id, now);
+    const ids = opts.includeReviewed
+      ? repo.listNotes(db, { deckId, limit: 100_000 }).map((n) => n.id)
+      : repo.unreviewedNoteIds(db, deckId);
+    for (const id of ids) repo.deleteNote(db, id, now);
     db.prepare("DELETE FROM job WHERE deck_id = ? AND status IN ('queued', 'failed', 'done')").run(deckId);
     const deck = repo.getDeck(db, deckId)!;
     if (deck.pageCount > 0) {
-      insertGenerationJobs(db, deckId, deck.pageCount, chunkSize, now);
-      repo.updateDeck(db, deckId, { status: 'generating', error: null }, now);
+      insertGenerationJobs(db, deckId, now);
+      repo.updateDeck(db, deckId, { status: 'generating', error: null, summary: null }, now);
     } else {
-      insertJob(db, deckId, 'render', null, null, now);
-      repo.updateDeck(db, deckId, { status: 'pending', error: null }, now);
+      insertJob(db, deckId, 'render', now);
+      repo.updateDeck(db, deckId, { status: 'pending', error: null, summary: null }, now);
     }
   });
 }
@@ -101,15 +108,25 @@ export function resetRunningJobs(db: Db): void {
   db.prepare("UPDATE job SET status = 'queued' WHERE status = 'running'").run();
 }
 
+export interface CleanNote {
+  kind: NoteKind;
+  front: string;
+  back: string;
+  slideRefs: number[];
+  frontImagePage: number | null;
+  tags: string[];
+}
+
 /** Bereinigt eine von Claude erzeugte Note; null = verwerfen. */
-export function sanitizeNote(n: GeneratedNote, pageCount: number, fallbackPage: number) {
-  const front = n.front.trim();
+export function sanitizeNote(n: GeneratedNote, pageCount: number, fallbackPage: number): CleanNote | null {
+  let front = n.front.trim();
   if (!front) return null;
   const valid = (p: number) => Number.isInteger(p) && p >= 1 && p <= pageCount;
   const slides = [...new Set(n.slides.filter(valid))];
   let kind: NoteKind = n.kind;
   let frontImagePage = n.frontImagePage;
   if (kind === 'cloze' && clozeOrdinals(front).length === 0) kind = 'qa';
+  if (kind === 'cloze') front = limitClozeGaps(front, MAX_CLOZE_GAPS);
   if (kind === 'diagram' && (frontImagePage === null || !valid(frontImagePage))) kind = 'qa';
   if (kind !== 'diagram') frontImagePage = null;
   return {
@@ -122,18 +139,43 @@ export function sanitizeNote(n: GeneratedNote, pageCount: number, fallbackPage: 
   };
 }
 
+/** Behält Notes in der gelieferten Reihenfolge (Wichtigkeit), solange Gesamt- und Pro-Folie-Grenze halten. */
+export function applyCardLimits<T extends { kind: NoteKind; front: string; slideRefs: number[] }>(
+  notes: T[],
+  maxCards: number,
+  perSlide = MAX_CARDS_PER_SLIDE,
+): T[] {
+  const kept: T[] = [];
+  const bySlide = new Map<number, number>();
+  let total = 0;
+  for (const n of notes) {
+    const count = n.kind === 'cloze' ? clozeOrdinals(n.front).length : 1;
+    const slide = n.slideRefs[0]!;
+    const onSlide = bySlide.get(slide) ?? 0;
+    if (total + count > maxCards || onSlide + count > perSlide) continue;
+    kept.push(n);
+    total += count;
+    bySlide.set(slide, onSlide + count);
+  }
+  return kept;
+}
+
 export function createWorker(deps: {
   db: Db;
   dataDir: string;
   runClaude: RunClaude;
   render?: (pdf: string, out: string) => Promise<RenderedSlide[]>;
   now?: () => number;
-  chunkSize?: number;
+  /** Modell für die Zusammenfassung (z. B. "sonnet"), null = Standard des Accounts. */
+  summaryModel?: string | null;
+  /** Modell für die Kartenerzeugung (z. B. "opus"), null = Standard des Accounts. */
+  cardsModel?: string | null;
 }): Worker {
   const { db, dataDir, runClaude } = deps;
   const render = deps.render ?? renderPdf;
   const now = deps.now ?? Date.now;
-  const chunkSize = deps.chunkSize ?? CHUNK_SIZE;
+  const summaryModel = deps.summaryModel ?? null;
+  const cardsModel = deps.cardsModel ?? null;
 
   let paused = false;
   let pauseReason: string | null = null;
@@ -155,18 +197,20 @@ export function createWorker(deps: {
   function finalizeDeck(deckId: string) {
     const jobs = listJobs(db, deckId);
     if (jobs.some((j) => j.status === 'queued' || j.status === 'running')) return;
-    const chunks = jobs.filter((j) => j.kind === 'chunk');
-    const failed = chunks.filter((j) => j.status === 'failed').length;
-    if (chunks.length > 0 && failed === chunks.length) {
-      repo.updateDeck(db, deckId, { status: 'error', error: 'Alle Abschnitte fehlgeschlagen' }, now());
-    } else if (chunks.length > 0) {
-      repo.updateDeck(db, deckId, { status: 'ready', error: failed ? `${failed} Abschnitt(e) fehlgeschlagen` : null }, now());
+    const summary = jobs.find((j) => j.kind === 'summary');
+    const cards = jobs.find((j) => j.kind === 'cards');
+    if (cards?.status === 'done') {
+      repo.updateDeck(db, deckId, { status: 'ready', error: null }, now());
+    } else if (summary?.status === 'failed') {
+      repo.updateDeck(db, deckId, { status: 'error', error: 'Zusammenfassung fehlgeschlagen' }, now());
+    } else if (cards?.status === 'failed') {
+      repo.updateDeck(db, deckId, { status: 'error', error: 'Kartenerzeugung fehlgeschlagen' }, now());
     }
   }
 
-  function setJob(id: string, fields: { status: Job['status']; attempts?: number; error?: string | null }) {
-    db.prepare('UPDATE job SET status = ?, attempts = COALESCE(?, attempts), error = ? WHERE id = ?')
-      .run(fields.status, fields.attempts ?? null, fields.error ?? null, id);
+  function setJob(id: string, fields: { status: Job['status']; attempts?: number; error?: string | null; usage?: ClaudeUsage | null }) {
+    db.prepare('UPDATE job SET status = ?, attempts = COALESCE(?, attempts), error = ?, usage_json = COALESCE(?, usage_json) WHERE id = ?')
+      .run(fields.status, fields.attempts ?? null, fields.error ?? null, fields.usage ? JSON.stringify(fields.usage) : null, id);
   }
 
   /** Gemeinsame Fehlerbehandlung für Claude-Jobs. */
@@ -192,13 +236,18 @@ export function createWorker(deps: {
     }
   }
 
-  async function callClaude(prompt: string, jsonSchema: object, deckId: string): Promise<ClaudeResult> {
+  async function callClaude(prompt: string, jsonSchema: object, deckId: string, model: string | null): Promise<ClaudeResult> {
     const cwd = await mkdtemp(path.join(tmpdir(), 'naklearn-claude-'));
     try {
-      return await runClaude({ prompt, jsonSchema, addDirs: [slidesDir(deckId)], cwd });
+      return await runClaude({ prompt, jsonSchema, addDirs: [slidesDir(deckId)], cwd, model });
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
+  }
+
+  function figuresOf(deckId: string, slides: { page: number; text: string; image: string }[]) {
+    const pages = pickFigurePages(slides, MAX_FIGURES);
+    return slides.filter((s) => pages.includes(s.page)).map((s) => ({ page: s.page, imagePath: path.join(slidesDir(deckId), s.image) }));
   }
 
   async function doRender(job: Job) {
@@ -209,8 +258,8 @@ export function createWorker(deps: {
       const slides = await render(path.join(dataDir, 'pdfs', `${deck.pdfSha256}.pdf`), slidesDir(deck.id));
       tx(db, () => {
         repo.replaceSlides(db, deck.id, slides.map((s) => ({ deckId: deck.id, ...s })));
-        repo.updateDeck(db, deck.id, { pageCount: slides.length, status: 'generating', error: null }, now());
-        insertGenerationJobs(db, deck.id, slides.length, chunkSize, now());
+        repo.updateDeck(db, deck.id, { pageCount: slides.length, status: 'generating', error: null, summary: null }, now());
+        insertGenerationJobs(db, deck.id, now());
         setJob(job.id, { status: 'done' });
       });
     } catch (e) {
@@ -219,57 +268,53 @@ export function createWorker(deps: {
     }
   }
 
-  async function doChunk(job: Job) {
+  async function doSummary(job: Job) {
     const deck = repo.getDeck(db, job.deckId);
     const mod = deck && repo.getModule(db, deck.moduleId);
     if (!deck || !mod) return setJob(job.id, { status: 'failed', error: 'Foliensatz oder Modul gelöscht' });
-    const all = repo.listSlides(db, deck.id);
-    const part = all.filter((s) => s.page >= job.chunkFrom! && s.page <= job.chunkTo!);
-    const prompt = buildChunkPrompt({
-      language: mod.language,
-      deckTitle: deck.title,
-      outline: outlineOf(all),
-      slides: part.map((s) => ({ page: s.page, text: s.text, imagePath: path.join(slidesDir(deck.id), s.image) })),
-    });
-    const r = await callClaude(prompt, chunkJsonSchema, deck.id);
+    const slides = repo.listSlides(db, deck.id);
+    const prompt = buildSummaryPrompt({ language: mod.language, deckTitle: deck.title, slides, figures: figuresOf(deck.id, slides) });
+    const r = await callClaude(prompt, summaryJsonSchema, deck.id, summaryModel);
     if (!r.ok) return handleFailure(job, r);
-    const parsed = ChunkOutputSchema.safeParse(r.output);
+    const parsed = SummaryOutputSchema.safeParse(r.output);
     if (!parsed.success) return handleFailure(job, { ok: false, kind: 'invalid', message: 'Antwort passt nicht zum Schema' });
     rateStrikes = 0;
     tx(db, () => {
-      parsed.data.notes.forEach((n, i) => {
-        const clean = sanitizeNote(n, deck.pageCount, job.chunkFrom!);
-        if (clean) repo.insertNote(db, { deckId: deck.id, source: 'chunk', position: job.chunkFrom! * 1000 + i, ...clean }, now());
-      });
-      setJob(job.id, { status: 'done', attempts: job.attempts + 1 });
+      repo.updateDeck(db, deck.id, { summary: parsed.data.summary }, now());
+      setJob(job.id, { status: 'done', attempts: job.attempts + 1, usage: r.usage });
     });
-    finalizeDeck(deck.id);
   }
 
-  async function doSynthesis(job: Job) {
+  async function doCards(job: Job) {
     const deck = repo.getDeck(db, job.deckId);
     const mod = deck && repo.getModule(db, deck.moduleId);
     if (!deck || !mod) return setJob(job.id, { status: 'failed', error: 'Foliensatz oder Modul gelöscht' });
-    const notes = repo.listNotes(db, { deckId: deck.id, limit: 5000 });
-    const prompt = buildSynthesisPrompt({
+    if (!deck.summary) {
+      setJob(job.id, { status: 'failed', error: 'Zusammenfassung fehlt' });
+      return finalizeDeck(deck.id);
+    }
+    const slides = repo.listSlides(db, deck.id);
+    const maxCards = Math.max(3, Math.floor(deck.pageCount * CARDS_PER_SLIDE));
+    const prompt = buildCardsPrompt({
       language: mod.language,
       deckTitle: deck.title,
-      slides: repo.listSlides(db, deck.id),
-      existing: notes.map((n) => ({ id: n.id, front: n.front })),
+      summary: deck.summary,
+      outline: outlineOf(slides),
+      maxCards,
+      figures: figuresOf(deck.id, slides),
     });
-    const r = await callClaude(prompt, synthesisJsonSchema, deck.id);
+    const r = await callClaude(prompt, cardsJsonSchema, deck.id, cardsModel);
     if (!r.ok) return handleFailure(job, r);
-    const parsed = SynthesisOutputSchema.safeParse(r.output);
+    const parsed = CardsOutputSchema.safeParse(r.output);
     if (!parsed.success) return handleFailure(job, { ok: false, kind: 'invalid', message: 'Antwort passt nicht zum Schema' });
     rateStrikes = 0;
-    const removable = new Set(repo.unreviewedNoteIds(db, deck.id));
+    const clean = parsed.data.notes.map((n) => sanitizeNote(n, deck.pageCount, 1)).filter((n): n is CleanNote => n !== null);
+    const kept = applyCardLimits(clean, maxCards);
     tx(db, () => {
-      for (const id of parsed.data.removeNoteIds) if (removable.has(id)) repo.deleteNote(db, id, now());
-      parsed.data.notes.forEach((n, i) => {
-        const clean = sanitizeNote(n, deck.pageCount, 1);
-        if (clean) repo.insertNote(db, { deckId: deck.id, source: 'synthesis', position: SYNTHESIS_POSITION_BASE + i, ...clean }, now());
+      kept.forEach((n, i) => {
+        repo.insertNote(db, { deckId: deck.id, source: 'chunk', position: n.slideRefs[0]! * 1000 + i, ...n }, now());
       });
-      setJob(job.id, { status: 'done', attempts: job.attempts + 1 });
+      setJob(job.id, { status: 'done', attempts: job.attempts + 1, usage: r.usage });
     });
     finalizeDeck(deck.id);
   }
@@ -288,8 +333,9 @@ export function createWorker(deps: {
     current = { jobId: job.id, deckId: job.deckId, kind: job.kind };
     try {
       if (job.kind === 'render') await doRender(job);
-      else if (job.kind === 'chunk') await doChunk(job);
-      else await doSynthesis(job);
+      else if (job.kind === 'summary') await doSummary(job);
+      else if (job.kind === 'cards') await doCards(job);
+      else setJob(job.id, { status: 'failed', error: 'Veralteter Job – bitte „Neu erzeugen“' });
     } catch (e) {
       handleFailure(job, { ok: false, kind: 'failed', message: String(e) });
     } finally {

@@ -1,4 +1,4 @@
-import { ChunkOutputSchema, SynthesisOutputSchema, type Language } from '@naklearn/core';
+import { CardsOutputSchema, SummaryOutputSchema, type Language } from '@naklearn/core';
 import { z } from 'zod';
 
 /** JSON-Schema ohne `$schema`-Angabe: claude validiert nur gegen seinen Standard-Draft. */
@@ -7,27 +7,41 @@ function jsonSchemaOf(schema: z.ZodType): object {
   return rest;
 }
 
-export const chunkJsonSchema: object = jsonSchemaOf(ChunkOutputSchema);
-export const synthesisJsonSchema: object = jsonSchemaOf(SynthesisOutputSchema);
+export const summaryJsonSchema: object = jsonSchemaOf(SummaryOutputSchema);
+export const cardsJsonSchema: object = jsonSchemaOf(CardsOutputSchema);
 
-export interface PromptSlide {
+/** Folien, die Claude als Bild ansehen darf. */
+export interface PromptFigure {
   page: number;
-  text: string;
   imagePath: string;
 }
 
-export interface ChunkPromptInput {
-  language: Language;
-  deckTitle: string;
-  outline: string;
-  slides: PromptSlide[];
-}
-
-export interface SynthesisPromptInput {
+export interface SummaryPromptInput {
   language: Language;
   deckTitle: string;
   slides: { page: number; text: string }[];
-  existing: { id: string; front: string }[];
+  figures: PromptFigure[];
+}
+
+export interface CardsPromptInput {
+  language: Language;
+  deckTitle: string;
+  summary: string;
+  outline: string;
+  maxCards: number;
+  figures: PromptFigure[];
+}
+
+const FIGURE_TEXT_LIMIT = 200;
+
+/** Textarme Folien (vermutlich Abbildungen), höchstens `max`, ohne Titelfolie, in Folienreihenfolge. */
+export function pickFigurePages(slides: { page: number; text: string }[], max: number): number[] {
+  return slides
+    .filter((s) => s.page > 1 && s.text.trim().length < FIGURE_TEXT_LIMIT)
+    .sort((a, b) => a.text.trim().length - b.text.trim().length || a.page - b.page)
+    .slice(0, max)
+    .map((s) => s.page)
+    .sort((a, b) => a - b);
 }
 
 export function outlineOf(slides: { page: number; text: string }[]): string {
@@ -41,64 +55,67 @@ export function outlineOf(slides: { page: number; text: string }[]): string {
 
 function languageRule(language: Language): string {
   return language === 'en'
-    ? 'Write every card in English, using the exact technical terms from the slides.'
-    : 'Write every card in German. The first time an English technical term from the slides appears on a card, give it in parentheses after the German term, e.g. "Gestaltungsrichtlinien (design guidelines)".';
+    ? 'Write everything in English, using the exact technical terms from the slides.'
+    : 'Write everything in German. The first time an English technical term from the slides appears, give it in parentheses after the German term, e.g. "Gestaltungsrichtlinien (design guidelines)".';
 }
 
-const CARD_RULES = `
-Card rules:
-- Goal: the student must be able to pass a university exam with multiple-choice, short-answer and essay questions using ONLY these cards. Be thorough: cover every definition, model, principle, list, distinction and example that is examinable.
-- Skip title, agenda, organisational and "questions?" slides.
-- Roughly 1–3 cards per content slide; more for dense slides, none for empty ones.
-- One learning goal per card. Answers are detailed: definition, explanation, a concrete example, and where useful the contrast to related concepts. Use Markdown (bullet lists, **bold** key terms). No answer is a single word unless it is a cloze.
-- Card kinds:
-  - "qa": question on front, answer on back. Mix definition ("What is …?"), explanation ("Explain …", "Why …?"), comparison ("Difference between X and Y?") and enumeration ("Name the four …") questions.
-  - "cloze": for key sentences and lists. Put the full sentence on the front with gaps written as {{c1::text}}, {{c2::text}} …; each number becomes its own card. "back" holds optional extra explanation (may be empty).
-  - "diagram": for slides whose figure carries meaning (process models, diagrams, interface examples). The slide image is shown on the front; set "frontImagePage" to that slide's page and ask about the figure ("What does this model show? Explain its phases."). Look at the slide image with the Read tool before writing such a card.
-- "slides": page numbers the card is based on (from the "=== Slide N ===" markers). "frontImagePage": page number for diagram cards, otherwise null. "tags": 1–3 short topic tags.
-- Never invent content that is not supported by the slides; you may add a brief clarifying example.`;
+function figureList(figures: PromptFigure[]): string {
+  if (figures.length === 0) return '(none)';
+  return figures.map((f) => `p. ${f.page}: ${f.imagePath}`).join('\n');
+}
 
-export function buildChunkPrompt(i: ChunkPromptInput): string {
-  const body = i.slides
-    .map((s) => `=== Slide ${s.page} ===\nImage: ${s.imagePath}\n${s.text || '(no extractable text – look at the image)'}`)
-    .join('\n\n');
-  return `You are creating spaced-repetition flashcards from lecture slides.
+export function buildSummaryPrompt(i: SummaryPromptInput): string {
+  const text = i.slides.map((s) => `=== Slide ${s.page} ===\n${s.text || '(no extractable text)'}`).join('\n\n');
+  return `You are condensing lecture slides into a compact, exam-focused study summary.
 
 Lecture: "${i.deckTitle}"
 ${languageRule(i.language)}
 
-Outline of the whole lecture (for context only):
-${i.outline}
+Keep ONLY what a student needs for the exam: core concepts and definitions, models/frameworks and their parts, processes and their steps, key distinctions and comparisons, important principles.
+Skip: title, agenda, outline and recap-only slides; course logistics; anecdotes and running-example storytelling (keep only the concept it illustrates); history and dates; screenshots and their concrete values; tool/UI details; anything repeated.
 
-${CARD_RULES}
+Format: Markdown, "##" sections in lecture order, short bullets. End every bullet with its slide reference, e.g. "(p. 12)" or "(p. 12–14)". Be concise – no filler, no introduction, no conclusion.
 
-Slides to turn into cards (text extracted from the PDF; image paths can be opened with the Read tool – do so for slides with figures or little text):
+Slides that are mostly a figure (open with the Read tool only if you need the figure to understand the content):
+${figureList(i.figures)}
 
-${body}
-
-Return JSON matching the given schema: {"notes": [...]}.`;
-}
-
-export function buildSynthesisPrompt(i: SynthesisPromptInput): string {
-  const text = i.slides.map((s) => `=== Slide ${s.page} ===\n${s.text}`).join('\n\n');
-  const existing = i.existing.map((e) => `[${e.id}] ${e.front.replace(/\s+/g, ' ').slice(0, 200)}`).join('\n');
-  return `You are reviewing a set of spaced-repetition flashcards generated slide-by-slide from a lecture.
-
-Lecture: "${i.deckTitle}"
-${languageRule(i.language)}
-
-Tasks:
-1. Add cards that connect concepts across slides and typical exam questions for this lecture (e.g. "Compare …", "How does X relate to Y?", "Apply … to an example", "Summarise the steps of …"). Do not repeat existing cards.
-2. Find duplicates among the existing cards. For each group of cards that ask essentially the same thing, keep the best one and list the IDs of the others in "removeNoteIds".
-
-${CARD_RULES}
-
-Full lecture text:
+Slides (text extracted from the PDF):
 
 ${text}
 
-Existing cards ([id] front):
-${existing}
+Return JSON matching the given schema: {"summary": "<markdown>"}.`;
+}
 
-Return JSON matching the given schema: {"notes": [...], "removeNoteIds": [...]}.`;
+export function buildCardsPrompt(i: CardsPromptInput): string {
+  const aim = Math.max(1, Math.round(i.maxCards * 0.6));
+  return `You are writing spaced-repetition flashcards from an exam-focused lecture summary.
+
+Lecture: "${i.deckTitle}"
+${languageRule(i.language)}
+
+Hard limits:
+- at most ${i.maxCards} cards in total – fewer is better, aim for about ${aim}. A cloze note counts once per gap.
+- at most 2 cards per slide.
+- Order the notes by importance (most exam-relevant first); anything beyond the limit is dropped from the end.
+
+Rules:
+- One learning goal per card, one card per concept – no duplicates, no trivia, no details of examples.
+- Answers concise but complete: the definition or core statement plus 1–3 key points; a short example only if it really helps. Markdown allowed.
+- Kinds:
+  - "qa" (default): question on the front, answer on the back.
+  - "cloze": only for a key definition or a short list; at most 2 gaps ({{c1::…}}, {{c2::…}}) that hide the key terms; "back" may hold a one-line explanation or be empty.
+  - "diagram": only if one of the listed figures is itself the subject AND the answer is not printed on that slide; set "frontImagePage" to that page. Rarely needed.
+- "slides": page numbers taken from the summary's "(p. …)" references. "frontImagePage": null unless diagram. "tags": 1–3 short topic tags.
+
+Summary:
+
+${i.summary}
+
+Slide outline (for page numbers):
+${i.outline}
+
+Figures available for diagram cards:
+${figureList(i.figures)}
+
+Return JSON matching the given schema: {"notes": [...]}.`;
 }

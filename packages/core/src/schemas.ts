@@ -9,15 +9,15 @@ export const GeneratedNoteSchema = z.object({
   tags: z.array(z.string()),
 });
 
-export const ChunkOutputSchema = z.object({
+export const SummaryOutputSchema = z.object({
+  summary: z.string().min(1),
+});
+
+export const CardsOutputSchema = z.object({
   notes: z.array(GeneratedNoteSchema),
 });
 
-export const SynthesisOutputSchema = z.object({
-  notes: z.array(GeneratedNoteSchema),
-  removeNoteIds: z.array(z.string()),
-});
 
 export type GeneratedNote = z.infer<typeof GeneratedNoteSchema>;
-export type ChunkOutput = z.infer<typeof ChunkOutputSchema>;
-export type SynthesisOutput = z.infer<typeof SynthesisOutputSchema>;
+export type SummaryOutput = z.infer<typeof SummaryOutputSchema>;
+export type CardsOutput = z.infer<typeof CardsOutputSchema>;

@@ -11,7 +11,13 @@ process.stdin.on('end', () => {
   const mode = process.env.FAKE_CLAUDE_MODE ?? 'ok';
   const env = (o) => process.stdout.write(JSON.stringify({ type: 'result', ...o }));
   if (mode === 'ok') {
-    env({ subtype: 'success', is_error: false, result: '', structured_output: { notes: [{ kind: 'qa', front: 'Q', back: 'A', slides: [1], frontImagePage: null, tags: [] }] } });
+    env({
+      subtype: 'success', is_error: false, result: '',
+      structured_output: { notes: [{ kind: 'qa', front: 'Q', back: 'A', slides: [1], frontImagePage: null, tags: [] }] },
+      usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 5, cache_creation_input_tokens: 100 },
+      total_cost_usd: 0.0123,
+      modelUsage: { 'claude-sonnet-5-5': {} },
+    });
   } else if (mode === 'fenced') {
     env({ subtype: 'success', is_error: false, result: 'Hier:\n```json\n{"notes":[]}\n```' });
   } else if (mode === 'invalid') {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clozeOrdinals, renderCloze } from '../src/cloze.ts';
+import { clozeOrdinals, limitClozeGaps, renderCloze } from '../src/cloze.ts';
 
 describe('clozeOrdinals', () => {
   it('liefert sortierte, eindeutige Lücken-Nummern', () => {
@@ -24,5 +24,15 @@ describe('renderCloze', () => {
     expect(renderCloze('{{c1::Norman::Person}} schrieb das Buch', 1, 'front')).toBe(
       '<span class="cloze">[Person]</span> schrieb das Buch',
     );
+  });
+});
+
+describe('limitClozeGaps', () => {
+  it('behält die zwei kleinsten Lücken-Nummern und macht den Rest zu Klartext', () => {
+    expect(limitClozeGaps('{{c1::a}} {{c2::b::hint}} {{c3::c}} {{c1::d}}', 2)).toBe('{{c1::a}} {{c2::b::hint}} c {{c1::d}}');
+    expect(clozeOrdinals(limitClozeGaps('{{c4::x}} {{c2::y}} {{c9::z}}', 2))).toEqual([2, 4]);
+  });
+  it('lässt Texte mit wenigen Lücken unverändert', () => {
+    expect(limitClozeGaps('{{c1::a}} b', 2)).toBe('{{c1::a}} b');
   });
 });

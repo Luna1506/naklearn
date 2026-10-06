@@ -27,6 +27,12 @@ describe('repo', () => {
     expect(repo.listModules(db)).toHaveLength(0);
   });
 
+  it('speichert die Zusammenfassung eines Foliensatzes', () => {
+    const { db, deck } = setup();
+    expect(deck.summary).toBeNull();
+    expect(repo.updateDeck(db, deck.id, { summary: '## Kern' }, 2000).summary).toBe('## Kern');
+  });
+
   it('vergibt Deck-Positionen fortlaufend und findet PDFs per Hash', () => {
     const { db, mod, deck } = setup();
     const d2 = repo.createDeck(db, { moduleId: mod.id, title: 'Ch2', pdfSha256: 'def' }, 1000);

@@ -18,8 +18,8 @@ async function call(mode: string) {
   const dir = await mkdtemp(path.join(tmpdir(), 'naklearn-claude-'));
   process.env.FAKE_CLAUDE_MODE = mode;
   process.env.FAKE_CLAUDE_LOG = path.join(dir, 'log.jsonl');
-  const run = createClaudeRunner({ claudePath: FAKE, model: 'sonnet' });
-  const res = await run({ prompt: 'PROMPT-TEXT', jsonSchema: { type: 'object' }, addDirs: ['/slides/x'], cwd: dir });
+  const run = createClaudeRunner({ claudePath: FAKE });
+  const res = await run({ prompt: 'PROMPT-TEXT', jsonSchema: { type: 'object' }, addDirs: ['/slides/x'], cwd: dir, model: 'sonnet' });
   const log = JSON.parse(readFileSync(process.env.FAKE_CLAUDE_LOG, 'utf8').trim().split('\n')[0]!);
   return { res, log };
 }
@@ -27,14 +27,15 @@ async function call(mode: string) {
 describe('createClaudeRunner', () => {
   it('liest structured_output und übergibt Prompt per stdin', async () => {
     const { res, log } = await call('ok');
-    expect(res).toEqual({ ok: true, output: { notes: [expect.objectContaining({ front: 'Q' })] } });
+    expect(res).toMatchObject({ ok: true, output: { notes: [expect.objectContaining({ front: 'Q' })] } });
+    expect(res.ok && res.usage).toEqual({ model: 'claude-sonnet-5-5', inputTokens: 10, outputTokens: 20, cacheReadTokens: 5, cacheCreationTokens: 100, costUsd: 0.0123 });
     expect(log.stdin).toBe('PROMPT-TEXT');
     expect(log.argv).toEqual(expect.arrayContaining(['-p', '--output-format', 'json', '--json-schema', '--add-dir', '/slides/x', '--model', 'sonnet']));
     expect(log.argv[log.argv.indexOf('--tools') + 1]).toBe('Read');
     expect(log.argv[log.argv.indexOf('--allowedTools') + 1]).toBe('Read(//slides/x/**)');
   });
   it('akzeptiert einen ```json-Block als Fallback', async () => {
-    expect((await call('fenced')).res).toEqual({ ok: true, output: { notes: [] } });
+    expect((await call('fenced')).res).toMatchObject({ ok: true, output: { notes: [] } });
   });
   it('meldet ungültiges JSON', async () => {
     expect((await call('invalid')).res).toMatchObject({ ok: false, kind: 'invalid' });
@@ -49,7 +50,7 @@ describe('createClaudeRunner', () => {
     expect((await call('crash')).res).toMatchObject({ ok: false, kind: 'failed' });
   });
   it('meldet fehlendes Programm', async () => {
-    const run = createClaudeRunner({ claudePath: '/nonexistent/claude', model: null });
+    const run = createClaudeRunner({ claudePath: '/nonexistent/claude' });
     expect(await run({ prompt: 'x', jsonSchema: {}, addDirs: [], cwd: tmpdir() })).toMatchObject({ ok: false, kind: 'failed' });
   });
 });
@@ -59,6 +60,13 @@ describe('classifyError / parseClaudeOutput', () => {
     expect(classifyError('Invalid API key · Please run /login')).toBe('auth');
     expect(classifyError('API Error: 529 overloaded')).toBe('rate_limit');
     expect(classifyError('irgendwas')).toBe('failed');
+  });
+  it('lässt --model weg, wenn kein Modell angegeben ist', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'naklearn-claude-'));
+    process.env.FAKE_CLAUDE_LOG = path.join(dir, 'log.jsonl');
+    await createClaudeRunner({ claudePath: FAKE })({ prompt: 'x', jsonSchema: {}, addDirs: [], cwd: dir });
+    const log = JSON.parse(readFileSync(process.env.FAKE_CLAUDE_LOG, 'utf8').trim());
+    expect(log.argv).not.toContain('--model');
   });
   it('behandelt leere Ausgabe', () => {
     expect(parseClaudeOutput('')).toMatchObject({ ok: false });

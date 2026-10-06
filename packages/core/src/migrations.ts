@@ -57,4 +57,8 @@ export const CORE_MIGRATIONS: string[] = [
   CREATE INDEX card_seq ON card(seq);
   CREATE INDEX revlog_seq ON revlog(seq);
   `,
+  `
+  ALTER TABLE deck ADD COLUMN summary TEXT;
+  ALTER TABLE job ADD COLUMN usage_json TEXT;
+  `,
 ];

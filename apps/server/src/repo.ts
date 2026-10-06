@@ -64,7 +64,8 @@ export function deleteModule(db: Db, id: string, now = Date.now()): void {
 
 const toDeck = (r: Row): Deck => ({
   id: r.id, moduleId: r.module_id, title: r.title, pdfSha256: r.pdf_sha256, pageCount: r.page_count,
-  status: r.status, error: r.error ?? null, position: r.position, deleted: !!r.deleted, updatedAt: r.updated_at,
+  status: r.status, error: r.error ?? null, summary: r.summary ?? null, position: r.position,
+  deleted: !!r.deleted, updatedAt: r.updated_at,
 });
 
 export function getDeck(db: Db, id: string): Deck | undefined {
@@ -93,15 +94,15 @@ export function createDeck(db: Db, input: { moduleId: string; title: string; pdf
 export function updateDeck(
   db: Db,
   id: string,
-  patch: Partial<{ title: string; status: DeckStatus; error: string | null; pageCount: number }>,
+  patch: Partial<{ title: string; status: DeckStatus; error: string | null; pageCount: number; summary: string | null }>,
   now = Date.now(),
 ): Deck {
   const cur = getDeck(db, id);
   if (!cur) throw new Error(`Foliensatz ${id} nicht gefunden`);
   const next = { ...cur, ...patch };
   db.prepare(
-    'UPDATE deck SET title = ?, status = ?, error = ?, page_count = ?, updated_at = ?, seq = ? WHERE id = ?',
-  ).run(next.title, next.status, next.error, next.pageCount, now, nextSeq(db), id);
+    'UPDATE deck SET title = ?, status = ?, error = ?, page_count = ?, summary = ?, updated_at = ?, seq = ? WHERE id = ?',
+  ).run(next.title, next.status, next.error, next.pageCount, next.summary, now, nextSeq(db), id);
   return getDeck(db, id)!;
 }
 

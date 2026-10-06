@@ -178,7 +178,8 @@ export function buildApp(deps: {
   app.post('/api/decks/:id/regenerate', async (req) => {
     const { id } = IdParam.parse(req.params);
     must(repo.getDeck(db, id), 'Foliensatz');
-    regenerateDeck(db, id, now());
+    const { includeReviewed } = z.object({ includeReviewed: z.boolean().optional() }).parse(req.body ?? {});
+    regenerateDeck(db, id, now(), { includeReviewed });
     worker.wake();
     return { ok: true };
   });

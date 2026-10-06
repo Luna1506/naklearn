@@ -1,13 +1,26 @@
 import { spawn } from 'node:child_process';
 
 export type ClaudeFailure = 'auth' | 'rate_limit' | 'invalid' | 'failed';
-export type ClaudeResult = { ok: true; output: unknown } | { ok: false; kind: ClaudeFailure; message: string };
+export interface ClaudeUsage {
+  model: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+}
+
+export type ClaudeResult =
+  | { ok: true; output: unknown; usage: ClaudeUsage | null }
+  | { ok: false; kind: ClaudeFailure; message: string };
 
 export interface ClaudeRequest {
   prompt: string;
   jsonSchema: object;
   addDirs: string[];
   cwd: string;
+  /** Modell-Alias oder -ID (z. B. "sonnet"); null/undefined = Standard des Accounts. */
+  model?: string | null;
   timeoutMs?: number;
 }
 
@@ -17,6 +30,18 @@ export function classifyError(text: string): ClaudeFailure {
   if (/not logged in|\/login|authenticat|unauthori[sz]ed|\b401\b|invalid api key|oauth/i.test(text)) return 'auth';
   if (/rate.?limit|usage limit|limit reached|\b429\b|overloaded|\b529\b/i.test(text)) return 'rate_limit';
   return 'failed';
+}
+
+function usageOf(env: any): ClaudeUsage | null {
+  if (!env?.usage) return null;
+  return {
+    model: Object.keys(env.modelUsage ?? {})[0] ?? null,
+    inputTokens: env.usage.input_tokens ?? 0,
+    outputTokens: env.usage.output_tokens ?? 0,
+    cacheReadTokens: env.usage.cache_read_input_tokens ?? 0,
+    cacheCreationTokens: env.usage.cache_creation_input_tokens ?? 0,
+    costUsd: env.total_cost_usd ?? 0,
+  };
 }
 
 export function parseClaudeOutput(stdout: string): ClaudeResult {
@@ -30,17 +55,18 @@ export function parseClaudeOutput(stdout: string): ClaudeResult {
     const msg = String(env.result ?? env.subtype ?? 'Fehler');
     return { ok: false, kind: classifyError(`${msg} ${env.api_error_status ?? ''}`), message: msg.slice(0, 500) };
   }
-  if (env.structured_output !== undefined && env.structured_output !== null) return { ok: true, output: env.structured_output };
+  const usage = usageOf(env);
+  if (env.structured_output !== undefined && env.structured_output !== null) return { ok: true, output: env.structured_output, usage };
   const text = String(env.result ?? '');
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
   try {
-    return { ok: true, output: JSON.parse(fenced ? fenced[1]! : text) };
+    return { ok: true, output: JSON.parse(fenced ? fenced[1]! : text), usage };
   } catch {
     return { ok: false, kind: 'invalid', message: 'Antwort von claude ist kein JSON' };
   }
 }
 
-export function createClaudeRunner(opts: { claudePath: string; model: string | null }): RunClaude {
+export function createClaudeRunner(opts: { claudePath: string }): RunClaude {
   return (req) =>
     new Promise((resolve) => {
       const args = [
@@ -51,7 +77,7 @@ export function createClaudeRunner(opts: { claudePath: string; model: string | n
       ];
       // Lesen nur in den Folienordnern erlauben (`//` = absoluter Pfad in Claude-Code-Regeln).
       for (const d of req.addDirs) args.push('--allowedTools', `Read(/${d.replace(/\/+$/, '')}/**)`, '--add-dir', d);
-      if (opts.model) args.push('--model', opts.model);
+      if (req.model) args.push('--model', req.model);
 
       const child = spawn(opts.claudePath, args, { cwd: req.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
       let out = '';

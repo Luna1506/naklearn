@@ -13,7 +13,9 @@ resetRunningJobs(db);
 const worker = createWorker({
   db,
   dataDir: cfg.dataDir,
-  runClaude: createClaudeRunner({ claudePath: cfg.claudePath, model: cfg.claudeModel }),
+  runClaude: createClaudeRunner({ claudePath: cfg.claudePath }),
+  summaryModel: cfg.summaryModel,
+  cardsModel: cfg.cardsModel,
 });
 worker.start();
 

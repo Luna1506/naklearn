@@ -3,71 +3,98 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ClaudeRequest, ClaudeResult } from '../src/claude.ts';
-import { createWorker, enqueueDeck, listJobs, regenerateDeck, resetRunningJobs, retryJob, sanitizeNote } from '../src/generation.ts';
+import { applyCardLimits, createWorker, enqueueDeck, listJobs, regenerateDeck, resetRunningJobs, retryJob, sanitizeNote } from '../src/generation.ts';
 import * as repo from '../src/repo.ts';
 import { memDb } from './helpers.ts';
 
-const PAGES = 5;
+const PAGES = 6;
+const usage = { model: 'm', inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0.01 };
 
-/** Fake-Claude: erzeugt pro Folie im Prompt eine qa-Karte, bei Synthese eine Verknüpfungskarte. */
+/** Fake-Claude: Zusammenfassung bzw. pro Folie drei Karten (davon ein Lückentext mit 4 Lücken). */
 function fakeClaude(script: Partial<Record<number, ClaudeResult>> = {}) {
   const calls: ClaudeRequest[] = [];
   const run = async (req: ClaudeRequest): Promise<ClaudeResult> => {
     calls.push(req);
     const scripted = script[calls.length];
     if (scripted) return scripted;
-    if (req.prompt.includes('removeNoteIds')) {
-      const ids = [...req.prompt.matchAll(/^\[([^\]]+)\]/gm)].map((m) => m[1]!);
-      return { ok: true, output: { notes: [{ kind: 'qa', front: 'Compare A and B', back: 'x', slides: [1, 2], frontImagePage: null, tags: [] }], removeNoteIds: ids.slice(0, 1) } };
+    if (JSON.stringify(req.jsonSchema).includes('"summary"')) {
+      return { ok: true, output: { summary: `## Summary of ${PAGES} slides` }, usage };
     }
-    const pages = [...req.prompt.matchAll(/=== Slide (\d+) ===/g)].map((m) => Number(m[1]));
-    return { ok: true, output: { notes: pages.map((p) => ({ kind: 'qa', front: `Q${p}`, back: `A${p}`, slides: [p], frontImagePage: null, tags: [] })) } };
+    const notes = [];
+    for (let p = 1; p <= PAGES; p++) {
+      notes.push({ kind: 'qa', front: `Q${p}a`, back: 'A', slides: [p], frontImagePage: null, tags: [] });
+      notes.push({ kind: 'qa', front: `Q${p}b`, back: 'A', slides: [p], frontImagePage: null, tags: [] });
+      notes.push({ kind: 'cloze', front: `{{c1::a}} {{c2::b}} {{c3::c}} {{c4::d}} (${p})`, back: '', slides: [p], frontImagePage: null, tags: [] });
+    }
+    return { ok: true, output: { notes }, usage };
   };
   return { run, calls };
 }
 
 const fakeRender = async () =>
-  Array.from({ length: PAGES }, (_, i) => ({ page: i + 1, text: `Text of slide ${i + 1}`, image: `${i + 1}.jpg` }));
+  Array.from({ length: PAGES }, (_, i) => ({ page: i + 1, text: i === 2 ? '' : `Text of slide ${i + 1} `.repeat(20), image: `${i + 1}.jpg` }));
 
 async function setup(script: Partial<Record<number, ClaudeResult>> = {}) {
   const db = memDb();
   const dataDir = await mkdtemp(path.join(tmpdir(), 'naklearn-gen-'));
-  const mod = repo.createModule(db, { name: 'UIUX', language: 'en' });
-  const deck = repo.createDeck(db, { moduleId: mod.id, title: 'Ch1', pdfSha256: 'sha' });
+  const mod = repo.createModule(db, { name: 'CS', language: 'en' });
+  const deck = repo.createDeck(db, { moduleId: mod.id, title: 'Week 1', pdfSha256: 'sha' });
   let now = 1_000_000;
   const claude = fakeClaude(script);
-  const worker = createWorker({ db, dataDir, runClaude: claude.run, render: fakeRender, now: () => now, chunkSize: 2 });
+  const worker = createWorker({ db, dataDir, runClaude: claude.run, render: fakeRender, now: () => now, summaryModel: 'sonnet', cardsModel: 'opus' });
   const drain = async () => { for (let i = 0; i < 50 && (await worker.tick()); i++); };
   return { db, deck, worker, claude, drain, advance: (ms: number) => (now += ms) };
 }
 
-describe('Worker', () => {
-  it('rendert, erzeugt pro Abschnitt Karten und führt die Synthese aus', async () => {
+const cardCount = (db: ReturnType<typeof memDb>, deckId: string) =>
+  repo.listNotes(db, { deckId }).reduce((s, n) => s + n.cards.length, 0);
+
+describe('Worker: Zusammenfassung → Karten', () => {
+  it('fasst mit dem Zusammenfassungs-Modell zusammen und erzeugt Karten mit dem Karten-Modell', async () => {
     const { db, deck, claude, drain } = await setup();
     enqueueDeck(db, deck.id);
     await drain();
-    expect(repo.getDeck(db, deck.id)).toMatchObject({ status: 'ready', pageCount: PAGES, error: null });
-    expect(repo.listSlides(db, deck.id)).toHaveLength(PAGES);
-    expect(listJobs(db, deck.id).map((j) => j.kind)).toEqual(['render', 'chunk', 'chunk', 'chunk', 'synthesis']);
-    expect(claude.calls).toHaveLength(4);
-    expect(claude.calls[0]!.addDirs[0]).toContain(path.join('slides', deck.id));
-    const fronts = repo.listNotes(db, { deckId: deck.id }).map((n) => n.front);
-    // Q1 wurde von der Synthese als Duplikat entfernt, die Verknüpfungskarte kam dazu
-    expect(fronts).toEqual(['Q2', 'Q3', 'Q4', 'Q5', 'Compare A and B']);
+    expect(listJobs(db, deck.id).map((j) => j.kind)).toEqual(['render', 'summary', 'cards']);
+    expect(claude.calls.map((c) => c.model)).toEqual(['sonnet', 'opus']);
+    expect(claude.calls[1]!.prompt).toContain('## Summary of 6 slides');
+    expect(repo.getDeck(db, deck.id)).toMatchObject({ status: 'ready', error: null, summary: '## Summary of 6 slides' });
+    expect(listJobs(db, deck.id).find((j) => j.kind === 'cards')!.usage).toEqual(usage);
+  });
+
+  it('nur textarme Folien werden als Abbildungen angeboten (höchstens 5)', async () => {
+    const { db, deck, claude, drain } = await setup();
+    enqueueDeck(db, deck.id);
+    await drain();
+    const figureLines = claude.calls[0]!.prompt.split('\n').filter((l) => l.includes('.jpg'));
+    expect(figureLines.length).toBeGreaterThan(0);
+    expect(figureLines.length).toBeLessThanOrEqual(5);
+    expect(figureLines.some((l) => l.includes('3.jpg'))).toBe(true);
+  });
+
+  it('hält höchstens 1 Karte pro Folie im Schnitt und 2 pro Folie, Lückentexte mit max. 2 Lücken', async () => {
+    const { db, deck, drain } = await setup();
+    enqueueDeck(db, deck.id);
+    await drain();
+    expect(cardCount(db, deck.id)).toBeLessThanOrEqual(PAGES);
+    const perSlide = new Map<number, number>();
+    for (const n of repo.listNotes(db, { deckId: deck.id })) {
+      perSlide.set(n.slideRefs[0]!, (perSlide.get(n.slideRefs[0]!) ?? 0) + n.cards.length);
+      if (n.kind === 'cloze') expect(n.cards.length).toBeLessThanOrEqual(2);
+    }
+    for (const c of perSlide.values()) expect(c).toBeLessThanOrEqual(2);
   });
 
   it('wiederholt bei ungültigem JSON und gibt nach 3 Versuchen auf', async () => {
-    const bad: ClaudeResult = { ok: true, output: { nope: 1 } };
-    const { db, deck, drain } = await setup({ 1: bad, 2: bad, 3: bad });
+    const bad: ClaudeResult = { ok: true, output: { nope: 1 }, usage: null };
+    const { db, deck, drain } = await setup({ 2: bad, 3: bad, 4: bad });
     enqueueDeck(db, deck.id);
     await drain();
-    const chunk1 = listJobs(db, deck.id).find((j) => j.kind === 'chunk')!;
-    expect(chunk1).toMatchObject({ status: 'failed', attempts: 3 });
-    expect(repo.getDeck(db, deck.id)).toMatchObject({ status: 'ready', error: '1 Abschnitt(e) fehlgeschlagen' });
-    retryJob(db, chunk1.id);
+    const cards = listJobs(db, deck.id).find((j) => j.kind === 'cards')!;
+    expect(cards).toMatchObject({ status: 'failed', attempts: 3 });
+    expect(repo.getDeck(db, deck.id)).toMatchObject({ status: 'error', error: 'Kartenerzeugung fehlgeschlagen' });
+    retryJob(db, cards.id);
     await drain();
-    expect(listJobs(db, deck.id).find((j) => j.id === chunk1.id)!.status).toBe('done');
-    expect(repo.getDeck(db, deck.id)!.error).toBeNull();
+    expect(repo.getDeck(db, deck.id)).toMatchObject({ status: 'ready', error: null });
   });
 
   it('pausiert bei fehlendem Login, bis fortgesetzt wird', async () => {
@@ -76,7 +103,6 @@ describe('Worker', () => {
     await drain();
     expect(worker.status()).toMatchObject({ state: 'paused', pausedUntil: null });
     expect(worker.status().pauseReason).toContain('nicht eingeloggt');
-    expect(listJobs(db, deck.id).find((j) => j.kind === 'chunk')!).toMatchObject({ status: 'queued', attempts: 0 });
     worker.resume();
     await drain();
     expect(repo.getDeck(db, deck.id)!.status).toBe('ready');
@@ -101,7 +127,7 @@ describe('Worker', () => {
     expect(listJobs(db, deck.id)[0]!.status).toBe('queued');
   });
 
-  it('regenerateDeck behält bewertete Karten', async () => {
+  it('regenerateDeck behält bewertete Karten – außer bei includeReviewed', async () => {
     const { db, deck, drain } = await setup();
     enqueueDeck(db, deck.id);
     await drain();
@@ -109,8 +135,23 @@ describe('Worker', () => {
     repo.insertRevlog(db, { id: 'r1', cardId: keep.cards[0]!.id, rating: 3, reviewedAt: 1, durationMs: 1, deviceId: 'x', revokes: null });
     regenerateDeck(db, deck.id);
     expect(repo.listNotes(db, { deckId: deck.id }).map((n) => n.id)).toEqual([keep.id]);
+    expect(repo.getDeck(db, deck.id)!.summary).toBeNull();
     await drain();
-    expect(repo.listNotes(db, { deckId: deck.id }).length).toBeGreaterThan(1);
+    regenerateDeck(db, deck.id, Date.now(), { includeReviewed: true });
+    expect(repo.listNotes(db, { deckId: deck.id })).toHaveLength(0);
+    expect(listJobs(db, deck.id).map((j) => j.kind)).toEqual(['summary', 'cards']);
+  });
+});
+
+describe('applyCardLimits', () => {
+  const n = (slide: number, kind: 'qa' | 'cloze' = 'qa', front = `F${slide}`) =>
+    ({ kind, front, back: '', slideRefs: [slide], frontImagePage: null, tags: [] });
+  it('behält die Reihenfolge (Wichtigkeit) bis zur Obergrenze', () => {
+    expect(applyCardLimits([n(1), n(2), n(3)], 2).map((x) => x.front)).toEqual(['F1', 'F2']);
+  });
+  it('höchstens 2 Karten pro Folie, Lücken zählen einzeln', () => {
+    const kept = applyCardLimits([n(1), n(1, 'cloze', '{{c1::a}} {{c2::b}}'), n(1), n(2)], 10);
+    expect(kept.map((x) => x.front)).toEqual(['F1', 'F1', 'F2']);
   });
 });
 
@@ -119,12 +160,12 @@ describe('sanitizeNote', () => {
   it('verwirft Foliennummern außerhalb des Decks und nutzt die Ersatzfolie', () => {
     expect(sanitizeNote({ ...base, slides: [0, 99] }, 10, 4)!.slideRefs).toEqual([4]);
   });
-  it('wandelt Lückentext ohne Lücke in Frage/Antwort um', () => {
+  it('wandelt Lückentext ohne Lücke in Frage/Antwort um und kürzt auf 2 Lücken', () => {
     expect(sanitizeNote({ ...base, kind: 'cloze', front: 'ohne Lücke' }, 10, 1)!.kind).toBe('qa');
+    expect(sanitizeNote({ ...base, kind: 'cloze', front: '{{c1::a}} {{c2::b}} {{c3::c}}' }, 10, 1)!.front).toBe('{{c1::a}} {{c2::b}} c');
   });
   it('wandelt Diagramm-Karte ohne gültige Seite in Frage/Antwort um', () => {
-    const n = sanitizeNote({ ...base, kind: 'diagram', frontImagePage: 42 }, 10, 1)!;
-    expect(n).toMatchObject({ kind: 'qa', frontImagePage: null });
+    expect(sanitizeNote({ ...base, kind: 'diagram', frontImagePage: 42 }, 10, 1)).toMatchObject({ kind: 'qa', frontImagePage: null });
   });
   it('verwirft Karten ohne Inhalt', () => {
     expect(sanitizeNote({ ...base, front: '   ' }, 10, 1)).toBeNull();

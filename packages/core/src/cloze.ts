@@ -13,3 +13,9 @@ export function renderCloze(text: string, ordinal: number, side: 'front' | 'back
     return `<span class="cloze-answer">${content}</span>`;
   });
 }
+
+/** Begrenzt einen Lückentext auf `max` Lücken-Nummern (die kleinsten bleiben); weitere Lücken werden Klartext. */
+export function limitClozeGaps(text: string, max: number): string {
+  const keep = new Set(clozeOrdinals(text).slice(0, max));
+  return text.replace(CLOZE_RE, (all, n: string, content: string) => (keep.has(Number(n)) ? all : content));
+}

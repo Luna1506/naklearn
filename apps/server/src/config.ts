@@ -12,7 +12,10 @@ export interface Config {
   token: string;
   deviceId: string;
   claudePath: string;
-  claudeModel: string | null;
+  /** Modell für Zusammenfassungen (günstig), Standard "sonnet". */
+  summaryModel: string | null;
+  /** Modell für die Kartenerzeugung (Qualität), Standard "opus". */
+  cardsModel: string | null;
   webDir: string | null;
 }
 
@@ -39,7 +42,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     token: stored.token,
     deviceId: stored.deviceId,
     claudePath: env.NAKLEARN_CLAUDE ?? path.join(os.homedir(), '.local/bin/claude'),
-    claudeModel: env.NAKLEARN_MODEL || null,
+    summaryModel: env.NAKLEARN_SUMMARY_MODEL || 'sonnet',
+    cardsModel: env.NAKLEARN_CARDS_MODEL || 'opus',
     webDir: env.NAKLEARN_WEB_DIR ?? defaultWebDir(),
   };
 }

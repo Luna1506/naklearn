@@ -14,7 +14,7 @@ async function setup() {
   for (const d of ['pdfs', 'slides', 'backups']) mkdirSync(path.join(dataDir, d), { recursive: true });
   const cfg: Config = {
     dataDir, port: 0, host: '127.0.0.1', token: 'secret', deviceId: 'laptop',
-    claudePath: '/bin/false', claudeModel: null, webDir: null,
+    claudePath: '/bin/false', summaryModel: null, cardsModel: null, webDir: null,
   };
   const db = memDb();
   let woke = 0;
@@ -94,6 +94,21 @@ describe('HTTP-API', () => {
     expect(evil.statusCode).toBe(403);
     const same = await app.inject({ method: 'POST', url: '/api/worker/resume', headers: { host: 'localhost:8742', origin: 'http://localhost:8742' } });
     expect(same.statusCode).toBe(200);
+  });
+
+  it('Neu erzeugen mit includeReviewed löscht auch gelernte Karten', async () => {
+    const { app, db } = await setup();
+    const mod = repo.createModule(db, { name: 'M', language: 'en' });
+    const deck = repo.createDeck(db, { moduleId: mod.id, title: 'D', pdfSha256: 's' });
+    repo.updateDeck(db, deck.id, { pageCount: 3, summary: 'alt' });
+    const { cards } = repo.insertNote(db, { deckId: deck.id, kind: 'qa', front: 'Q', back: 'A', slideRefs: [1], frontImagePage: null, tags: [], source: 'chunk', position: 0 });
+    repo.insertRevlog(db, { id: 'r', cardId: cards[0]!.id, rating: 3, reviewedAt: 1, durationMs: 1, deviceId: 'x', revokes: null });
+    const r = await app.inject({ method: 'POST', url: `/api/decks/${deck.id}/regenerate`, payload: { includeReviewed: true } });
+    expect(r.statusCode).toBe(200);
+    expect(repo.listNotes(db, { deckId: deck.id })).toHaveLength(0);
+    const detail = (await app.inject({ method: 'GET', url: `/api/decks/${deck.id}` })).json();
+    expect(detail.deck.summary).toBeNull();
+    expect(detail.jobs.map((j: { kind: string }) => j.kind)).toEqual(['summary', 'cards']);
   });
 
   it('Lernablauf: nächste Karte, bewerten, rückgängig', async () => {
