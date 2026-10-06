@@ -1,4 +1,4 @@
-# kartei Teil 2 (Android + Sync) Implementation Plan
+# NAKLearn Teil 2 (Android + Sync) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -12,10 +12,10 @@
 
 ## Global Constraints
 
-- Alle Befehle in `~/projects/kartei` innerhalb von `nix develop -c …`; Branch `feat/teil2-android` (abgezweigt von `feat/teil1-laptop`).
+- Alle Befehle in `~/projects/naklearn` innerhalb von `nix develop -c …`; Branch `feat/teil2-android` (abgezweigt von `main`).
 - Neue Workspace-Pakete erst mit `npm install` (ohne Argumente) registrieren, **dann** Abhängigkeiten mit `npm install -w <pkg> …` hinzufügen und in `package.json` prüfen (Lehre aus Teil 1).
 - TypeScript-Regeln wie Teil 1 (Type Stripping: `.ts`-Endungen, keine Enums/Parameter-Properties).
-- App-ID `de.luna.kartei`, App-Name `kartei`; Server-Port 8742; Pull-Seitengröße 2000.
+- App-ID `de.luna.naklearn`, App-Name `NAKLearn`; Server-Port 8742; Pull-Seitengröße 2000.
 - Sync: Revlog per ID idempotent; Module/Notes/Karten Last-Writer-Wins nach `updatedAt`; Server vergibt `seq`; Handy markiert lokale Änderungen mit `dirty = 1`.
 - Cleartext-HTTP nur für `ts.net` (MagicDNS) und `10.0.2.2` (Emulator); Verschlüsselung übernimmt Tailscale.
 - Upload vom Handy ist **nicht** Teil dieses Plans.
@@ -116,7 +116,7 @@ describe('SyncRequestSchema', () => {
 });
 ```
 
-Run: `nix develop -c npm test -w @kartei/core`
+Run: `nix develop -c npm test -w @naklearn/core`
 Expected: FAIL – `rows.ts`/`sync.ts` fehlen.
 
 - [ ] **Step 2: Implementierung**
@@ -141,7 +141,8 @@ export const toModule = (r: Row): Module => ({
 
 export const toDeck = (r: Row): Deck => ({
   id: r.id, moduleId: r.module_id, title: r.title, pdfSha256: r.pdf_sha256, pageCount: r.page_count,
-  status: r.status, error: r.error ?? null, position: r.position, deleted: !!r.deleted, updatedAt: r.updated_at,
+  status: r.status, error: r.error ?? null, summary: r.summary ?? null, position: r.position,
+  deleted: !!r.deleted, updatedAt: r.updated_at,
 });
 
 export const toNote = (r: Row): Note => ({
@@ -237,11 +238,11 @@ export * from './rows.ts';
 export * from './sync.ts';
 ```
 
-In `apps/server/src/repo.ts`: die lokalen Konstanten `toModule`, `toDeck`, `toNote`, `toCard`, `toRevlog` löschen und stattdessen aus `@kartei/core` importieren (Import-Liste oben ergänzen). Verhalten bleibt gleich.
+In `apps/server/src/repo.ts`: die lokalen Konstanten `toModule`, `toDeck`, `toNote`, `toCard`, `toRevlog` löschen und stattdessen aus `@naklearn/core` importieren (Import-Liste oben ergänzen). Verhalten bleibt gleich.
 
 - [ ] **Step 3: Tests laufen lassen**
 
-Run: `nix develop -c npm test -w @kartei/core && nix develop -c npm test -w @kartei/server`
+Run: `nix develop -c npm test -w @naklearn/core && nix develop -c npm test -w @naklearn/server`
 Expected: PASS (core neu + alle bisherigen Server-Tests unverändert grün).
 
 - [ ] **Step 4: Commit**
@@ -268,7 +269,7 @@ git commit -m "feat(core): shared row mappers and sync protocol"
 
 `apps/server/test/sync.test.ts`:
 ```ts
-import { emptyPush } from '@kartei/core';
+import { emptyPush } from '@naklearn/core';
 import { describe, expect, it } from 'vitest';
 import * as repo from '../src/repo.ts';
 import { getNext } from '../src/study.ts';
@@ -393,7 +394,7 @@ Zusätzlich in `apps/server/test/app.test.ts` am Ende von `describe('HTTP-API', 
   });
 ```
 
-Run: `nix develop -c npm test -w @kartei/server -- sync app`
+Run: `nix develop -c npm test -w @naklearn/server -- sync app`
 Expected: FAIL – `../src/sync.ts` fehlt bzw. Route 404.
 
 - [ ] **Step 2: Implementierung**
@@ -403,7 +404,7 @@ Expected: FAIL – `../src/sync.ts` fehlt bzw. Route 404.
 import {
   SYNC_PAGE_SIZE, toCard, toDeck, toModule, toNote, toRevlog, toSlideRow,
   type SyncPull, type SyncPush, type SyncResponse,
-} from '@kartei/core';
+} from '@naklearn/core';
 import { tx, type Db } from './db.ts';
 import { insertRevlog, nextSeq } from './repo.ts';
 import { recomputeCard } from './study.ts';
@@ -475,7 +476,7 @@ export function pullSince(db: Db, cursor: number, limit = SYNC_PAGE_SIZE): SyncR
 ```
 
 In `apps/server/src/app.ts`:
-- Import ergänzen: `import { SyncRequestSchema } from '@kartei/core';` und `import { applyPush, pullSince } from './sync.ts';`
+- Import ergänzen: `import { SyncRequestSchema } from '@naklearn/core';` und `import { applyPush, pullSince } from './sync.ts';`
 - Route vor `// ---- Folienbilder ----` einfügen:
 ```ts
   // ---- Sync ----
@@ -489,7 +490,7 @@ In `apps/server/src/app.ts`:
 
 - [ ] **Step 3: Tests laufen lassen**
 
-Run: `nix develop -c npm test -w @kartei/server`
+Run: `nix develop -c npm test -w @naklearn/server`
 Expected: PASS.
 
 - [ ] **Step 4: Commit**
@@ -513,7 +514,7 @@ git commit -m "feat(server): sync endpoint with idempotent push and paged pull"
 
 - [ ] **Step 1: Abhängigkeit**
 
-Run: `nix develop -c npm install -w @kartei/server qrcode@^1.5.4 && nix develop -c npm install -w @kartei/server -D @types/qrcode@^1.5.6` – danach `apps/server/package.json` prüfen.
+Run: `nix develop -c npm install -w @naklearn/server qrcode@^1.5.4 && nix develop -c npm install -w @naklearn/server -D @types/qrcode@^1.5.6` – danach `apps/server/package.json` prüfen.
 
 - [ ] **Step 2: Failing Tests**
 
@@ -525,8 +526,8 @@ import { detectPublicUrl, pairingPayload } from '../src/pair.ts';
 const tsJson = JSON.stringify({ Self: { DNSName: 'nixos.tail1234.ts.net.', TailscaleIPs: ['100.101.102.103', 'fd7a::1'] } });
 
 describe('detectPublicUrl', () => {
-  it('bevorzugt KARTEI_PUBLIC_URL', async () => {
-    expect(await detectPublicUrl(8742, { KARTEI_PUBLIC_URL: 'http://x:1/' }, async () => ({ stdout: tsJson }))).toBe('http://x:1');
+  it('bevorzugt NAKLEARN_PUBLIC_URL', async () => {
+    expect(await detectPublicUrl(8742, { NAKLEARN_PUBLIC_URL: 'http://x:1/' }, async () => ({ stdout: tsJson }))).toBe('http://x:1');
   });
   it('nutzt den MagicDNS-Namen aus tailscale status', async () => {
     expect(await detectPublicUrl(8742, {}, async () => ({ stdout: tsJson }))).toBe('http://nixos.tail1234.ts.net:8742');
@@ -557,7 +558,7 @@ In `apps/server/test/app.test.ts` ergänzen:
 
 `apps/client/test/router.test.ts`: in der `it.each`-Tabelle `['#/pair', { name: 'pair', params: {} }],` ergänzen.
 
-Run: `nix develop -c npm test -w @kartei/server -- pair app && nix develop -c npm test -w @kartei/client`
+Run: `nix develop -c npm test -w @naklearn/server -- pair app && nix develop -c npm test -w @naklearn/client`
 Expected: FAIL.
 
 - [ ] **Step 3: Implementierung Server**
@@ -572,7 +573,7 @@ type Exec = (cmd: string, args: string[]) => Promise<{ stdout: string }>;
 
 /** Adresse, unter der das Handy den Server erreicht (Tailscale MagicDNS bevorzugt). */
 export async function detectPublicUrl(port: number, env: NodeJS.ProcessEnv, exec: Exec = execFileAsync): Promise<string | null> {
-  if (env.KARTEI_PUBLIC_URL) return env.KARTEI_PUBLIC_URL.replace(/\/+$/, '');
+  if (env.NAKLEARN_PUBLIC_URL) return env.NAKLEARN_PUBLIC_URL.replace(/\/+$/, '');
   try {
     const { stdout } = await exec('tailscale', ['status', '--json']);
     const self = JSON.parse(stdout)?.Self;
@@ -638,14 +639,14 @@ export function PairPage() {
       {data && !data.url && (
         <p className="warn">
           Tailscale-Adresse nicht gefunden. Läuft Tailscale (<code>tailscale status</code>)? Alternativ
-          <code> KARTEI_PUBLIC_URL</code> setzen.
+          <code> NAKLEARN_PUBLIC_URL</code> setzen.
         </p>
       )}
       {data?.qrSvg && <div className="qr" dangerouslySetInnerHTML={{ __html: data.qrSvg }} />}
       {data && (
         <ol className="steps">
           <li>Tailscale-App auf dem Handy installieren und mit demselben Account anmelden.</li>
-          <li>kartei-App öffnen → Einstellungen → „QR-Code scannen“.</li>
+          <li>NAKLearn-App öffnen → Einstellungen → „QR-Code scannen“.</li>
           <li>
             Oder manuell eintragen: Adresse <code>{data.url ?? '–'}</code>, Token{' '}
             {showToken ? <code className="token">{data.token}</code> : <button onClick={() => setShowToken(true)}>anzeigen</button>}
@@ -689,14 +690,14 @@ git commit -m "feat: pairing endpoint and studio page with QR code"
 - Create: `packages/store/package.json`, `packages/store/src/{adapter.ts,migrate.ts,store.ts,sync.ts,index.ts}`
 - Create: `packages/store/test/{nodeAdapter.ts,seed.ts,store.test.ts}`
 - Create: `apps/server/test/sync-e2e.test.ts`
-- Modify: `apps/server/package.json` (devDependency `@kartei/store`)
+- Modify: `apps/server/package.json` (devDependency `@naklearn/store`)
 
 **Interfaces:**
 - Consumes: core (Mapper, Queue, Scheduler, Exam, Stats, Sync-Typen, `CORE_MIGRATIONS`, `toStudyCard`), Server `buildApp` (nur im E2E-Test).
 - Produces:
   - `interface SqlAdapter { execute(sql: string): Promise<void>; run(sql: string, params?: unknown[]): Promise<void>; all<T = Record<string, any>>(sql: string, params?: unknown[]): Promise<T[]>; transaction<T>(fn: () => Promise<T>): Promise<T> }`
   - `migrate(db: SqlAdapter): Promise<void>`
-  - `class LocalStore` mit `static open(db: SqlAdapter, opts?: { now?: () => number }): Promise<LocalStore>`, `readonly db`, `deviceId: string`, `nowMs(): number`, `getMeta(key): Promise<string | null>`, `setMeta(key, value): Promise<void>`, `next(scope)`, `answer(cardId, rating, durationMs)`, `undo(revlogId)`, `setSuspended(cardId, suspended)`, `updateNote(noteId, { front, back })`, `updateModule(id, patch: { examDate?: string | null; newPerDay?: number })`, `overview(): Promise<StoreOverview>`, `moduleDetail(id): Promise<{ module: Module; decks: (Deck & { noteCount: number })[] } | null>`, `listSlides(): Promise<SlideRow[]>`, `recompute(cardId): Promise<void>`
+  - `class LocalStore` mit `static open(db: SqlAdapter, opts?: { now?: () => number }): Promise<LocalStore>`, `readonly db`, `deviceId: string`, `nowMs(): number`, `getMeta(key): Promise<string | null>`, `setMeta(key, value): Promise<void>`, `next(scope)`, `answer(cardId, rating, durationMs)`, `undo(revlogId)`, `setSuspended(cardId, suspended)`, `updateNote(noteId, { front, back })`, `deleteNote(noteId)`, `updateModule(id, patch: { examDate?: string | null; newPerDay?: number })`, `overview(): Promise<StoreOverview>`, `moduleDetail(id): Promise<{ module: Module; decks: (Deck & { noteCount: number })[] } | null>`, `listSlides(): Promise<SlideRow[]>`, `recompute(cardId): Promise<void>`
   - `type StoreOverview = { studiedToday: number; streak: number; modules: (ModuleStats & { name: string; language: Language; examDate: string | null; newPerDay: number })[] }`
   - `type Transport = (req: SyncRequest) => Promise<SyncResponse>`, `syncStore(store: LocalStore, transport: Transport): Promise<{ pushed: number; pulled: number; cursor: number }>`
   - Test-Helper `nodeAdapter(db?: DatabaseSync): SqlAdapter`
@@ -706,16 +707,16 @@ git commit -m "feat: pairing endpoint and studio page with QR code"
 `packages/store/package.json`:
 ```json
 {
-  "name": "@kartei/store",
+  "name": "@naklearn/store",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
   "scripts": { "test": "TZ=Asia/Seoul vitest run" },
-  "dependencies": { "@kartei/core": "*" }
+  "dependencies": { "@naklearn/core": "*" }
 }
 ```
-Run: `nix develop -c npm install` (registriert den Workspace). In `apps/server/package.json` unter `devDependencies` `"@kartei/store": "*"` eintragen, erneut `nix develop -c npm install`.
+Run: `nix develop -c npm install` (registriert den Workspace). In `apps/server/package.json` unter `devDependencies` `"@naklearn/store": "*"` eintragen, erneut `nix develop -c npm install`.
 
 `packages/store/src/adapter.ts`:
 ```ts
@@ -826,6 +827,14 @@ describe('LocalStore', () => {
     expect(note[0]).toEqual({ dirty: 1, back: 'mehr' });
   });
 
+  it('löscht eine Notiz samt Karten als dirty', async () => {
+    const { db, store } = await open();
+    await store.deleteNote('n2');
+    expect((await store.next({})).counts.new).toBe(1);
+    const rows = await db.all<{ deleted: number; dirty: number }>("SELECT deleted, dirty FROM card WHERE note_id = 'n2'");
+    expect(rows).toEqual([{ deleted: 1, dirty: 1 }, { deleted: 1, dirty: 1 }]);
+  });
+
   it('pausiert Karten und ändert Moduleinstellungen', async () => {
     const { db, store } = await open();
     await store.setSuspended('c1', true);
@@ -847,14 +856,14 @@ describe('LocalStore', () => {
 });
 ```
 
-Run: `nix develop -c npm test -w @kartei/store`
+Run: `nix develop -c npm test -w @naklearn/store`
 Expected: FAIL – `../src/store.ts` fehlt.
 
 - [ ] **Step 3: Implementierung LocalStore**
 
 `packages/store/src/migrate.ts`:
 ```ts
-import { CORE_MIGRATIONS } from '@kartei/core';
+import { CORE_MIGRATIONS } from '@naklearn/core';
 import type { SqlAdapter } from './adapter.ts';
 
 export async function migrate(db: SqlAdapter): Promise<void> {
@@ -875,7 +884,7 @@ import {
   previewIntervals, replay, streak, studyDay, toCard, toDeck, toModule, toNote, toRevlog, toSlideRow, toStudyCard,
   type CardState, type Deck, type Grade, type Language, type Module, type ModuleStats, type QueueCard,
   type QueueCounts, type Scope, type SlideRow, type StudyCard,
-} from '@kartei/core';
+} from '@naklearn/core';
 import type { Row, SqlAdapter } from './adapter.ts';
 import { migrate } from './migrate.ts';
 
@@ -1002,6 +1011,14 @@ export class LocalStore {
     });
   }
 
+  async deleteNote(noteId: string): Promise<void> {
+    const now = this.clock();
+    await this.db.transaction(async () => {
+      await this.db.run('UPDATE note SET deleted = 1, updated_at = ?, dirty = 1 WHERE id = ?', [now, noteId]);
+      await this.db.run('UPDATE card SET deleted = 1, updated_at = ?, dirty = 1 WHERE note_id = ?', [now, noteId]);
+    });
+  }
+
   async setSuspended(cardId: string, suspended: boolean): Promise<void> {
     await this.db.run('UPDATE card SET suspended = ?, updated_at = ?, dirty = 1 WHERE id = ?', [suspended ? 1 : 0, this.clock(), cardId]);
   }
@@ -1082,15 +1099,15 @@ export * from './sync.ts';
 ```
 (`sync.ts` folgt in Step 5; bis dahin die Zeile weglassen.)
 
-Run: `nix develop -c npm test -w @kartei/store`
+Run: `nix develop -c npm test -w @naklearn/store`
 Expected: PASS.
 
 - [ ] **Step 4: Failing Tests für den Sync-Client (gegen den echten Server)**
 
 `apps/server/test/sync-e2e.test.ts`:
 ```ts
-import type { SyncRequest, SyncResponse } from '@kartei/core';
-import { LocalStore, syncStore, type SqlAdapter } from '@kartei/store';
+import type { SyncRequest, SyncResponse } from '@naklearn/core';
+import { LocalStore, syncStore, type SqlAdapter } from '@naklearn/store';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.ts';
@@ -1117,7 +1134,7 @@ const NOW = new Date('2026-10-06T10:00:00+09:00').getTime();
 
 async function setup() {
   const db = memDb();
-  const cfg = { dataDir: '/tmp', port: 0, host: '127.0.0.1', token: 't', deviceId: 'laptop', claudePath: '', claudeModel: null, webDir: null };
+  const cfg = { dataDir: '/tmp', port: 0, host: '127.0.0.1', token: 't', deviceId: 'laptop', claudePath: '', summaryModel: null, cardsModel: null, webDir: null };
   const worker = { wake() {}, resume() {}, status: () => ({ state: 'idle' as const, pauseReason: null, pausedUntil: null, current: null, queued: 0 }) };
   const app = buildApp({ db, cfg, worker, now: () => NOW, publicUrl: async () => null });
   const mod = repo.createModule(db, { name: 'UIUX', language: 'en' });
@@ -1221,6 +1238,17 @@ describe('Sync Handy ↔ Laptop', () => {
     expect(repo.studyRows(db).find((x) => x.cardId === c.cardId)!.state.state).toBe(0);
   });
 
+  it('Löschen auf dem Handy erreicht den Laptop', async () => {
+    const { db, phone, transport, tick } = await setup();
+    await syncStore(phone, transport);
+    tick(60_000);
+    const c = (await phone.next({})).card!;
+    await phone.deleteNote(c.noteId);
+    await syncStore(phone, transport);
+    expect(repo.getNote(db, c.noteId)!.deleted).toBe(true);
+    expect(repo.getCard(db, c.cardId)!.deleted).toBe(true);
+  });
+
   it('Löschungen auf dem Laptop verschwinden vom Handy', async () => {
     const { db, deck, phone, transport } = await setup();
     await syncStore(phone, transport);
@@ -1232,14 +1260,14 @@ describe('Sync Handy ↔ Laptop', () => {
 });
 ```
 
-Run: `nix develop -c npm test -w @kartei/server -- sync-e2e`
+Run: `nix develop -c npm test -w @naklearn/server -- sync-e2e`
 Expected: FAIL – `syncStore` existiert nicht.
 
 - [ ] **Step 5: Implementierung Sync-Client**
 
 `packages/store/src/sync.ts`:
 ```ts
-import { emptyPush, toCard, toModule, toNote, toRevlog, type SyncPull, type SyncPush, type SyncRequest, type SyncResponse } from '@kartei/core';
+import { emptyPush, toCard, toModule, toNote, toRevlog, type SyncPull, type SyncPush, type SyncRequest, type SyncResponse } from '@naklearn/core';
 import type { SqlAdapter } from './adapter.ts';
 import type { LocalStore } from './store.ts';
 
@@ -1280,12 +1308,12 @@ async function applyPull(store: LocalStore, pull: SyncPull): Promise<void> {
   }
   for (const d of pull.decks) {
     await db.run(
-      `INSERT INTO deck (id, module_id, title, pdf_sha256, page_count, status, error, position, deleted, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO deck (id, module_id, title, pdf_sha256, page_count, status, error, summary, position, deleted, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET module_id = excluded.module_id, title = excluded.title, page_count = excluded.page_count,
-         status = excluded.status, error = excluded.error, position = excluded.position, deleted = excluded.deleted,
-         updated_at = excluded.updated_at`,
-      [d.id, d.moduleId, d.title, d.pdfSha256, d.pageCount, d.status, d.error, d.position, d.deleted ? 1 : 0, d.updatedAt],
+         status = excluded.status, error = excluded.error, summary = excluded.summary, position = excluded.position,
+         deleted = excluded.deleted, updated_at = excluded.updated_at`,
+      [d.id, d.moduleId, d.title, d.pdfSha256, d.pageCount, d.status, d.error, d.summary, d.position, d.deleted ? 1 : 0, d.updatedAt],
     );
   }
   for (const s of pull.slides) {
@@ -1388,10 +1416,10 @@ git commit -m "feat(store): offline local store with sync client"
 
 Run:
 ```bash
-nix develop -c npm install -w @kartei/client @kartei/store@* @capacitor/core@^8.5.2 @capacitor/android@^8.5.2 @capacitor/app@^8.1.2 @capacitor/filesystem@^8.1.4 @capacitor/file-transfer@^2.0.6 @capacitor-community/sqlite@^8.1.1 @capacitor-mlkit/barcode-scanning@^8.2.1
-nix develop -c npm install -w @kartei/client -D @capacitor/cli@^8.5.2
+nix develop -c npm install -w @naklearn/client @naklearn/store@* @capacitor/core@^8.5.2 @capacitor/android@^8.5.2 @capacitor/app@^8.1.2 @capacitor/filesystem@^8.1.4 @capacitor/file-transfer@^2.0.6 @capacitor-community/sqlite@^8.1.1 @capacitor-mlkit/barcode-scanning@^8.2.1
+nix develop -c npm install -w @naklearn/client -D @capacitor/cli@^8.5.2
 ```
-`apps/client/package.json` prüfen (alle Einträge vorhanden; `@kartei/store` als `"*"`).
+`apps/client/package.json` prüfen (alle Einträge vorhanden; `@naklearn/store` als `"*"`).
 
 - [ ] **Step 2: Failing Tests**
 
@@ -1422,8 +1450,8 @@ describe('httpTransport', () => {
 
 `apps/client/test/controller.test.ts`:
 ```ts
-import type { SyncRequest, SyncResponse } from '@kartei/core';
-import { LocalStore, type SqlAdapter } from '@kartei/store';
+import type { SyncRequest, SyncResponse } from '@naklearn/core';
+import { LocalStore, type SqlAdapter } from '@naklearn/store';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { SyncController, type ImageStore } from '../src/native/controller.ts';
@@ -1448,7 +1476,7 @@ function pullWithSlides(n: number): SyncResponse {
     cursor: 5, hasMore: false,
     pull: {
       modules: [{ id: 'm', name: 'M', language: 'en', examDate: null, newPerDay: 20, deleted: false, updatedAt: 1 }],
-      decks: [{ id: 'd', moduleId: 'm', title: 'D', pdfSha256: 's', pageCount: n, status: 'ready', error: null, position: 1, deleted: false, updatedAt: 1 }],
+      decks: [{ id: 'd', moduleId: 'm', title: 'D', pdfSha256: 's', pageCount: n, status: 'ready', error: null, summary: null, position: 1, deleted: false, updatedAt: 1 }],
       slides: Array.from({ length: n }, (_, i) => ({ deckId: 'd', page: i + 1, image: `${i + 1}.jpg` })),
       notes: [], cards: [], revlog: [],
     },
@@ -1509,14 +1537,14 @@ describe('SyncController', () => {
 });
 ```
 
-Run: `nix develop -c npm test -w @kartei/client`
+Run: `nix develop -c npm test -w @naklearn/client`
 Expected: FAIL – Module fehlen.
 
 - [ ] **Step 3: transport.ts und controller.ts**
 
 `apps/client/src/native/transport.ts`:
 ```ts
-import type { Transport } from '@kartei/store';
+import type { Transport } from '@naklearn/store';
 
 export function parsePairing(text: string): { url: string; token: string } | null {
   try {
@@ -1544,9 +1572,9 @@ export function httpTransport(url: string, token: string, fetchImpl: typeof fetc
 
 `apps/client/src/native/controller.ts`:
 ```ts
-import type { Grade, Scope } from '@kartei/core';
-import { syncStore, type LocalStore, type Transport } from '@kartei/store';
-import type { StudyDataSource } from '@kartei/ui';
+import type { Grade, Scope } from '@naklearn/core';
+import { syncStore, type LocalStore, type Transport } from '@naklearn/store';
+import type { StudyDataSource } from '@naklearn/ui';
 import { httpTransport } from './transport.ts';
 
 export interface ImageStore {
@@ -1641,11 +1669,12 @@ export class LocalDataSource implements StudyDataSource {
   undo(revlogId: string) { return this.store.undo(revlogId); }
   setSuspended(cardId: string, suspended: boolean) { return this.store.setSuspended(cardId, suspended); }
   updateNote(noteId: string, patch: { front: string; back: string }) { return this.store.updateNote(noteId, patch); }
+  deleteNote(noteId: string) { return this.store.deleteNote(noteId); }
   slideUrl(deckId: string, page: number) { return this.images.src(deckId, page); }
 }
 ```
 
-Run: `nix develop -c npm test -w @kartei/client`
+Run: `nix develop -c npm test -w @naklearn/client`
 Expected: PASS.
 
 - [ ] **Step 4: Capacitor-Adapter (nicht unit-getestet, laufen nur auf dem Gerät)**
@@ -1653,9 +1682,9 @@ Expected: PASS.
 `apps/client/src/native/capSqlAdapter.ts`:
 ```ts
 import { CapacitorSQLite, SQLiteConnection } from '@capacitor-community/sqlite';
-import type { SqlAdapter } from '@kartei/store';
+import type { SqlAdapter } from '@naklearn/store';
 
-export async function openCapAdapter(name = 'kartei'): Promise<SqlAdapter> {
+export async function openCapAdapter(name = 'naklearn'): Promise<SqlAdapter> {
   const sqlite = new SQLiteConnection(CapacitorSQLite);
   const exists = (await sqlite.isConnection(name, false)).result;
   const conn = exists
@@ -1724,8 +1753,8 @@ export async function createImageStore(): Promise<ImageStore> {
 `apps/client/src/native/NativeApp.tsx`:
 ```tsx
 import { App as CapApp } from '@capacitor/app';
-import type { LocalStore } from '@kartei/store';
-import { StudyView } from '@kartei/ui';
+import type { LocalStore } from '@naklearn/store';
+import { StudyView } from '@naklearn/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { navigate, useRoute } from '../router.ts';
 import { LocalDataSource, type ImageStore, type SyncController, type SyncState } from './controller.ts';
@@ -1785,7 +1814,7 @@ export function NativeApp({ store, images, sync }: { store: LocalStore; images: 
 
 `apps/client/src/native/NativeHome.tsx`:
 ```tsx
-import type { LocalStore, StoreOverview } from '@kartei/store';
+import type { LocalStore, StoreOverview } from '@naklearn/store';
 import { useEffect, useState } from 'react';
 import { href, navigate } from '../router.ts';
 import type { SyncController, SyncState } from './controller.ts';
@@ -1809,7 +1838,7 @@ export function NativeHome({ store, sync, state }: { store: LocalStore; sync: Sy
   return (
     <main className="page native">
       <header className="topbar">
-        <h1>kartei</h1>
+        <h1>NAKLearn</h1>
         <a href={href('settings')} aria-label="Einstellungen">⚙</a>
       </header>
       <button className={`sync-status ${state.phase}`} onClick={() => (state.phase === 'unpaired' ? navigate('settings') : void sync.sync())}>
@@ -1844,8 +1873,8 @@ export function NativeHome({ store, sync, state }: { store: LocalStore; sync: Sy
 
 `apps/client/src/native/NativeModule.tsx`:
 ```tsx
-import type { Deck, Module } from '@kartei/core';
-import type { LocalStore } from '@kartei/store';
+import type { Deck, Module } from '@naklearn/core';
+import type { LocalStore } from '@naklearn/store';
 import { useEffect, useState } from 'react';
 import { href, navigate } from '../router.ts';
 
@@ -1903,7 +1932,7 @@ export function NativeModule({ store, id }: { store: LocalStore; id: string }) {
 `apps/client/src/native/NativeSettings.tsx`:
 ```tsx
 import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
-import type { LocalStore } from '@kartei/store';
+import type { LocalStore } from '@naklearn/store';
 import { useEffect, useState } from 'react';
 import { href } from '../router.ts';
 import { syncLabel } from './NativeHome.tsx';
@@ -1934,7 +1963,7 @@ export function NativeSettings({ store, sync, state }: { store: LocalStore; sync
       }
       const { barcodes } = await BarcodeScanner.scan();
       const p = barcodes[0] ? parsePairing(barcodes[0].rawValue) : null;
-      if (!p) return setMsg('Kein gültiger kartei-QR-Code.');
+      if (!p) return setMsg('Kein gültiger NAKLearn-QR-Code.');
       setUrl(p.url);
       setToken(p.token);
       await sync.pair(p.url, p.token);
@@ -1993,7 +2022,7 @@ export function NativeSettings({ store, sync, state }: { store: LocalStore; sync
 
 `apps/client/src/main.tsx` – Plattform-Weiche (Studio bleibt unverändert, Handy-Code wird nur nativ geladen):
 ```tsx
-import '@kartei/ui/study.css';
+import '@naklearn/ui/study.css';
 import './styles.css';
 import { Capacitor } from '@capacitor/core';
 import { StrictMode, type ReactNode } from 'react';
@@ -2006,7 +2035,7 @@ async function boot(): Promise<ReactNode> {
   const [{ openCapAdapter }, { createImageStore }, { LocalStore }, { SyncController }, { NativeApp }] = await Promise.all([
     import('./native/capSqlAdapter.ts'),
     import('./native/images.ts'),
-    import('@kartei/store'),
+    import('@naklearn/store'),
     import('./native/controller.ts'),
     import('./native/NativeApp.tsx'),
   ]);
@@ -2073,8 +2102,8 @@ Expected: OpenJDK 21, `/home/luna/Android/Sdk`, adb-Version.
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'de.luna.kartei',
-  appName: 'kartei',
+  appId: 'de.luna.naklearn',
+  appName: 'NAKLearn',
   webDir: 'dist',
   plugins: {
     CapacitorHttp: { enabled: true },
@@ -2092,8 +2121,8 @@ export default config;
 ```
 Root-`package.json` Skripte ergänzen:
 ```json
-    "android:build": "npm run android:build -w @kartei/client",
-    "android:install": "npm run android:install -w @kartei/client"
+    "android:build": "npm run android:build -w @naklearn/client",
+    "android:install": "npm run android:install -w @naklearn/client"
 ```
 
 Run: `cd apps/client && nix develop ../.. -c npx cap add android`
@@ -2132,12 +2161,12 @@ Falls ein AVD existiert (sonst mit `avdmanager` aus Android Studio anlegen oder 
 nix develop -c bash -c '
   ($ANDROID_HOME/emulator/emulator -avd <AVD> -no-window -no-audio -no-snapshot &) ; adb wait-for-device
   until adb shell getprop sys.boot_completed | grep -q 1; do sleep 2; done
-  npm run android:install && adb shell monkey -p de.luna.kartei 1 && sleep 8
-  adb logcat -d | grep -iE "Capacitor|chromium|kartei" | grep -iE "error|exception|Start fehlgeschlagen" | head -20
+  npm run android:install && adb shell monkey -p de.luna.naklearn 1 && sleep 8
+  adb logcat -d | grep -iE "Capacitor|chromium|naklearn" | grep -iE "error|exception|Start fehlgeschlagen" | head -20
 '
 ```
-Expected: keine Fehlerzeilen; `adb exec-out screencap -p > /tmp/kartei.png` zeigt „kartei“ mit „Nicht gekoppelt – Einstellungen öffnen“.
-Kopplung im Emulator testen: Server mit `KARTEI_PUBLIC_URL=http://10.0.2.2:8742` lokal starten oder in der App manuell `http://10.0.2.2:8742` + Token aus `~/.local/share/kartei/config.json` eintragen → Sync → Module erscheinen.
+Expected: keine Fehlerzeilen; `adb exec-out screencap -p > /tmp/naklearn.png` zeigt „NAKLearn“ mit „Nicht gekoppelt – Einstellungen öffnen“.
+Kopplung im Emulator testen: Server mit `NAKLEARN_PUBLIC_URL=http://10.0.2.2:8742` lokal starten oder in der App manuell `http://10.0.2.2:8742` + Token aus `~/.local/share/naklearn/config.json` eintragen → Sync → Module erscheinen.
 
 - [ ] **Step 6: Commit**
 
@@ -2159,20 +2188,20 @@ git commit -m "build: capacitor android project and apk build"
 In `~/nixos/dotfiles/modules/networking.nix` nach `networking.networkmanager.enable = true;` ergänzen:
 ```nix
   services.tailscale.enable = true;
-  # kartei-Server nur über Tailscale erreichbar
+  # NAKLearn-Server nur über Tailscale erreichbar
   networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8742 ];
 ```
-Außerdem in den Dotfiles `nix flake update kartei` (neuer Stand mit Sync-Endpoint).
+Außerdem in den Dotfiles `nix flake update naklearn` (neuer Stand mit Sync-Endpoint).
 Run: `cd ~/nixos/dotfiles && git add -A && nixos-rebuild build --flake .#nixos`
 Expected: Build erfolgreich.
 
 - [ ] **Step 2: Übergabe an Luna (braucht sudo und Handy)**
 
 Luna führt aus:
-1. `rebuild "kartei sync + tailscale"`
+1. `rebuild "NAKLearn sync + tailscale"`
 2. `sudo tailscale up` → Login-Link öffnen, anmelden.
 3. Tailscale-App auf dem Handy installieren, mit demselben Account anmelden.
-4. Auf dem Handy „USB-Debugging“ aktivieren, per USB verbinden, dann `cd ~/projects/kartei && nix develop -c npm run android:install`.
+4. Auf dem Handy „USB-Debugging“ aktivieren, per USB verbinden, dann `cd ~/projects/naklearn && nix develop -c npm run android:install`.
 
 Prüfen (Claude): `tailscale status` zeigt Laptop + Handy; `curl -s http://$(tailscale status --json | node -pe 'JSON.parse(require("fs").readFileSync(0)).Self.DNSName.replace(/\.$/,"")'):8742/api/overview` → 401 (Token nötig = Firewall offen, Auth aktiv).
 
