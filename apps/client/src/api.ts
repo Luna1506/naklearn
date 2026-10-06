@@ -7,9 +7,12 @@ export interface ModuleOverview {
   daysToExam: number | null; newTarget: number; warn: boolean;
 }
 export interface Overview { studiedToday: number; streak: number; modules: ModuleOverview[] }
+export interface JobUsage {
+  model: string | null; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; costUsd: number;
+}
 export interface Job {
-  id: string; deckId: string; kind: 'render' | 'chunk' | 'synthesis'; chunkFrom: number | null; chunkTo: number | null;
-  status: 'queued' | 'running' | 'done' | 'failed'; attempts: number; error: string | null; createdAt: number;
+  id: string; deckId: string; kind: 'render' | 'summary' | 'cards' | 'chunk' | 'synthesis'; chunkFrom: number | null; chunkTo: number | null;
+  status: 'queued' | 'running' | 'done' | 'failed'; attempts: number; error: string | null; usage: JobUsage | null; createdAt: number;
 }
 export interface WorkerStatus {
   state: 'idle' | 'running' | 'paused'; pauseReason: string | null; pausedUntil: number | null;
@@ -58,7 +61,8 @@ export const api = {
   deck: (id: string) => request<{ deck: Deck; jobs: Job[]; noteCount: number; moduleName: string }>(`/api/decks/${id}`),
   renameDeck: (id: string, title: string) => request<Deck>(`/api/decks/${id}`, json('PATCH', { title })),
   deleteDeck: (id: string) => request<{ ok: true }>(`/api/decks/${id}`, { method: 'DELETE' }),
-  regenerate: (id: string) => request<{ ok: true }>(`/api/decks/${id}/regenerate`, { method: 'POST' }),
+  regenerate: (id: string, includeReviewed = false) =>
+    request<{ ok: true }>(`/api/decks/${id}/regenerate`, json('POST', { includeReviewed })),
   retryJob: (id: string) => request<{ ok: true }>(`/api/jobs/${id}/retry`, { method: 'POST' }),
   worker: () => request<WorkerStatus>('/api/worker'),
   resumeWorker: () => request<{ ok: true }>('/api/worker/resume', { method: 'POST' }),
@@ -86,6 +90,9 @@ export class HttpDataSource implements StudyDataSource {
   }
   async updateNote(noteId: string, patch: { front: string; back: string }) {
     await api.updateNote(noteId, patch);
+  }
+  async deleteNote(noteId: string) {
+    await api.deleteNote(noteId);
   }
   slideUrl(deckId: string, page: number) {
     return `/api/slides/${deckId}/${page}.jpg`;

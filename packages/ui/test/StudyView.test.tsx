@@ -26,6 +26,9 @@ function fakeSource(cards: StudyCard[]): StudyDataSource & { answered: unknown[]
     undo: vi.fn(async () => {}),
     setSuspended: vi.fn(async () => {}),
     updateNote: vi.fn(async () => {}),
+    deleteNote: vi.fn(async () => {
+      queue.shift();
+    }),
     slideUrl: (deckId, page) => `/slides/${deckId}/${page}.jpg`,
   };
 }
@@ -83,6 +86,19 @@ describe('StudyView', () => {
     await act(async () => { fireEvent.keyDown(window, { key: ' ' }); });
     await act(async () => { fireEvent.keyDown(window, { key: ' ', repeat: true }); });
     expect(src.answered).toEqual([]);
+  });
+
+  it('löscht die Karte nach Rückfrage und zeigt die nächste', async () => {
+    const src = fakeSource([card('1'), card('2')]);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    render(<StudyView source={src} scope={{}} title="Heute" onExit={() => {}} />);
+    await screen.findByText('Frage 1');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Löschen/ })); });
+    expect(src.deleteNote).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.keyDown(window, { key: 'Delete' }); });
+    expect(src.deleteNote).toHaveBeenCalledWith('n1');
+    expect(await screen.findByText('Frage 2')).toBeTruthy();
+    confirm.mockRestore();
   });
 
   it('zeigt den Fertig-Zustand und erlaubt Rückgängig', async () => {

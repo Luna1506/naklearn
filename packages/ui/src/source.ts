@@ -6,5 +6,7 @@ export interface StudyDataSource {
   undo(revlogId: string): Promise<void>;
   setSuspended(cardId: string, suspended: boolean): Promise<void>;
   updateNote(noteId: string, patch: { front: string; back: string }): Promise<void>;
+  /** Löscht die Karte samt aller Lücken derselben Notiz. */
+  deleteNote(noteId: string): Promise<void>;
   slideUrl(deckId: string, page: number): string;
 }

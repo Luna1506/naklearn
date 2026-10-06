@@ -1,10 +1,19 @@
 import type { Deck } from '@naklearn/core';
 import { Markdown, SlideStrip } from '@naklearn/ui';
 import { useCallback, useEffect, useState } from 'react';
-import { api, type Job, type NoteListItem, type WorkerStatus } from '../api.ts';
+import { api, type Job, type JobUsage, type NoteListItem, type WorkerStatus } from '../api.ts';
 import { href, navigate } from '../router.ts';
 
-const KIND: Record<Job['kind'], string> = { render: 'Folien lesen', chunk: 'Karten erzeugen', synthesis: 'Zusammenfassen & Duplikate' };
+const KIND: Record<Job['kind'], string> = {
+  render: 'Folien lesen', summary: 'Zusammenfassen', cards: 'Karten erzeugen', chunk: 'Karten (altes Verfahren)', synthesis: 'Synthese (altes Verfahren)',
+};
+
+function usageText(u: JobUsage | null): string {
+  if (!u) return '';
+  const tokens = u.inputTokens + u.cacheReadTokens + u.cacheCreationTokens + u.outputTokens;
+  const model = u.model ? u.model.replace(/^claude-/, '') : '';
+  return `${model} · ${Math.round(tokens / 1000)}k Tokens (${Math.round(u.outputTokens / 1000)}k Ausgabe)`;
+}
 const JOB_STATUS: Record<Job['status'], string> = { queued: 'wartet', running: 'läuft …', done: 'fertig', failed: 'fehlgeschlagen' };
 const slideUrl = (deckId: string, page: number) => `/api/slides/${deckId}/${page}.jpg`;
 
@@ -41,8 +50,8 @@ export function DeckPage({ id }: { id: string }) {
   }, [active, load]);
 
   if (!deck) return <main className="page">{error ?? 'Lade …'}</main>;
-  const done = jobs.filter((j) => j.kind === 'chunk' && j.status === 'done').length;
-  const total = jobs.filter((j) => j.kind === 'chunk').length;
+  const totalTokens = jobs.reduce((s, j) => s + (j.usage ? j.usage.inputTokens + j.usage.cacheReadTokens + j.usage.cacheCreationTokens + j.usage.outputTokens : 0), 0);
+  const cardCount = notes.reduce((s, n) => s + n.cards.length, 0);
 
   return (
     <main className="page">
@@ -61,14 +70,14 @@ export function DeckPage({ id }: { id: string }) {
       )}
 
       <section>
-        <h2>Erzeugung {total > 0 && <span className="muted small">({done}/{total} Abschnitte)</span>}</h2>
+        <h2>Erzeugung {totalTokens > 0 && <span className="muted small">(Verbrauch: {Math.round(totalTokens / 1000)}k Tokens)</span>}</h2>
         <table className="table">
           <tbody>
             {jobs.map((j) => (
               <tr key={j.id}>
                 <td>{KIND[j.kind]}{j.chunkFrom !== null && ` · Folien ${j.chunkFrom}–${j.chunkTo}`}</td>
                 <td className={`job-${j.status}`}>{JOB_STATUS[j.status]}{j.attempts > 1 ? ` (Versuch ${j.attempts})` : ''}</td>
-                <td className="small muted">{j.status !== 'done' && j.error}</td>
+                <td className="small muted">{j.status === 'done' ? usageText(j.usage) : j.error}</td>
                 <td>{j.status === 'failed' && <button onClick={async () => { await api.retryJob(j.id); await load(); }}>Erneut versuchen</button>}</td>
               </tr>
             ))}
@@ -78,8 +87,9 @@ export function DeckPage({ id }: { id: string }) {
           <button
             disabled={active}
             onClick={async () => {
-              if (!confirm('Karten neu erzeugen? Bereits bewertete Karten bleiben erhalten.')) return;
-              await api.regenerate(id);
+              if (!confirm('Zusammenfassung und Karten neu erzeugen?')) return;
+              const all = confirm('Auch bereits gelernte Karten ersetzen?\nOK = alle Karten neu, Abbrechen = gelernte Karten behalten');
+              await api.regenerate(id, all);
               await load();
             }}
           >
@@ -106,8 +116,17 @@ export function DeckPage({ id }: { id: string }) {
         </div>
       </section>
 
+      {deck.summary && (
+        <section>
+          <details className="summary">
+            <summary><h2>Zusammenfassung</h2></summary>
+            <Markdown text={deck.summary} />
+          </details>
+        </section>
+      )}
+
       <section>
-        <h2>Karten ({notes.length})</h2>
+        <h2>Karten ({cardCount} aus {notes.length} Notizen)</h2>
         <p><a href={href('browse', { deckId: id })}>Im Karten-Browser bearbeiten</a></p>
         <div className="note-list">
           {notes.map((n) => (
@@ -116,6 +135,16 @@ export function DeckPage({ id }: { id: string }) {
                 <span className={`badge kind-${n.kind}`}>{n.kind}</span> <Markdown text={n.front} className="inline" />
               </summary>
               <Markdown text={n.back} />
+              <button
+                className="danger small"
+                onClick={async () => {
+                  if (!confirm('Diese Karte löschen?')) return;
+                  await api.deleteNote(n.id);
+                  await load();
+                }}
+              >
+                Löschen
+              </button>
               <SlideStrip deckId={n.deckId} pages={n.frontImagePage ? [n.frontImagePage] : n.slideRefs} slideUrl={slideUrl} />
             </details>
           ))}

@@ -95,6 +95,16 @@ export function StudyView({
     });
   }, [card, run, source, load]);
 
+  const remove = useCallback(() => {
+    if (!card) return;
+    const extra = card.kind === 'cloze' ? ' Alle Lücken dieses Lückentexts werden mitgelöscht.' : '';
+    if (!window.confirm(`Diese Karte wirklich löschen?${extra}`)) return;
+    void run(async () => {
+      await source.deleteNote(card.noteId);
+      await load();
+    });
+  }, [card, run, source, load]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (editing || bigFront) return;
@@ -115,13 +125,15 @@ export function StudyView({
         setEditing(true);
       } else if (e.key === 'p') {
         suspend();
+      } else if (e.key === 'Delete') {
+        remove();
       } else if (e.key === 'Escape') {
         onExit();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [card, revealed, rate, undoLast, suspend, editing, bigFront, onExit]);
+  }, [card, revealed, rate, undoLast, suspend, remove, editing, bigFront, onExit]);
 
   return (
     <div className="study">
@@ -181,6 +193,7 @@ export function StudyView({
               <button onClick={undoLast} disabled={!lastRevlog || busy}>Rückgängig <kbd>z</kbd></button>
               <button onClick={() => setEditing(true)}>Bearbeiten <kbd>e</kbd></button>
               <button onClick={suspend} disabled={busy}>Pausieren <kbd>p</kbd></button>
+              <button className="danger" onClick={remove} disabled={busy}>Löschen <kbd>Entf</kbd></button>
             </div>
           </footer>
 

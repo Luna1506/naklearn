@@ -62,3 +62,7 @@ tr.suspended { opacity: 0.5; }
   .notes-table td:nth-child(3) { display: none; }
   .notes-table .actions { white-space: normal; }
 }
+.summary > summary { cursor: pointer; list-style: none; }
+.summary > summary h2 { display: inline; }
+.summary .md { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px 16px; margin-top: 8px; }
+button.small { font-size: 0.8rem; padding: 3px 8px; }
