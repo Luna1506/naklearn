@@ -1,5 +1,5 @@
 import {
-  clozeOrdinals, emptyState, newId,
+  clozeOrdinals, emptyState, newId, toCard, toDeck, toModule, toNote, toRevlog,
   type Card, type CardState, type Deck, type DeckStatus, type Language, type Module, type Note,
   type NoteKind, type NoteSource, type QueueCard, type RevlogEntry, type Slide,
 } from '@naklearn/core';
@@ -15,10 +15,6 @@ export function nextSeq(db: Db): number {
 
 // ---------- Module ----------
 
-const toModule = (r: Row): Module => ({
-  id: r.id, name: r.name, language: r.language, examDate: r.exam_date ?? null,
-  newPerDay: r.new_per_day, deleted: !!r.deleted, updatedAt: r.updated_at,
-});
 
 export function getModule(db: Db, id: string): Module | undefined {
   const r = db.prepare('SELECT * FROM module WHERE id = ? AND deleted = 0').get(id) as Row | undefined;
@@ -62,11 +58,6 @@ export function deleteModule(db: Db, id: string, now = Date.now()): void {
 
 // ---------- Decks ----------
 
-const toDeck = (r: Row): Deck => ({
-  id: r.id, moduleId: r.module_id, title: r.title, pdfSha256: r.pdf_sha256, pageCount: r.page_count,
-  status: r.status, error: r.error ?? null, summary: r.summary ?? null, position: r.position,
-  deleted: !!r.deleted, updatedAt: r.updated_at,
-});
 
 export function getDeck(db: Db, id: string): Deck | undefined {
   const r = db.prepare('SELECT * FROM deck WHERE id = ? AND deleted = 0').get(id) as Row | undefined;
@@ -140,15 +131,7 @@ export interface NewNote {
   position: number;
 }
 
-const toNote = (r: Row): Note => ({
-  id: r.id, deckId: r.deck_id, kind: r.kind, front: r.front, back: r.back,
-  slideRefs: JSON.parse(r.slide_refs), frontImagePage: r.front_image_page ?? null, tags: JSON.parse(r.tags),
-  source: r.source, position: r.position, deleted: !!r.deleted, updatedAt: r.updated_at,
-});
 
-const toCard = (r: Row): Card => ({
-  id: r.id, noteId: r.note_id, ordinal: r.ordinal, suspended: !!r.suspended, deleted: !!r.deleted, updatedAt: r.updated_at,
-});
 
 function ordinalsFor(kind: NoteKind, front: string): number[] {
   if (kind !== 'cloze') return [0];
@@ -265,10 +248,6 @@ export function unreviewedNoteIds(db: Db, deckId: string): string[] {
 
 // ---------- Bewertungen und Zustand ----------
 
-const toRevlog = (r: Row): RevlogEntry => ({
-  id: r.id, cardId: r.card_id, rating: r.rating, reviewedAt: r.reviewed_at, durationMs: r.duration_ms,
-  deviceId: r.device_id, revokes: r.revokes ?? null,
-});
 
 export function insertRevlog(db: Db, e: RevlogEntry): void {
   const exists = db.prepare('SELECT 1 FROM revlog WHERE id = ?').get(e.id);

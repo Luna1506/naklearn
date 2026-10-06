@@ -9,3 +9,5 @@ export * from './queue.ts';
 export * from './stats.ts';
 export * from './schemas.ts';
 export * from './migrations.ts';
+export * from './rows.ts';
+export * from './sync.ts';
