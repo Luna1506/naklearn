@@ -11,6 +11,8 @@ import type { Db } from './db.ts';
 import { enqueueDeck, listJobs, regenerateDeck, retryJob, type Worker } from './generation.ts';
 import * as repo from './repo.ts';
 import { answer, getNext, getOverview, undo } from './study.ts';
+import { applyPush, pullSince } from './sync.ts';
+import { SyncRequestSchema } from '@naklearn/core';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -63,7 +65,7 @@ export function buildApp(deps: {
 }): FastifyInstance {
   const { db, cfg, worker } = deps;
   const now = deps.now ?? Date.now;
-  const app = Fastify({ logger: false, bodyLimit: 1 << 20 });
+  const app = Fastify({ logger: false, bodyLimit: 16 << 20 });
 
   app.register(multipart, { limits: { fileSize: 300 * 1024 * 1024, files: 50 } });
   if (cfg.webDir) app.register(fastifyStatic, { root: cfg.webDir, prefix: '/' });
@@ -247,6 +249,13 @@ export function buildApp(deps: {
       throw new NotFound((e as Error).message);
     }
     return { ok: true };
+  });
+
+  // ---- Sync ----
+  app.post('/api/sync', async (req) => {
+    const body = SyncRequestSchema.parse(req.body);
+    applyPush(db, body.push);
+    return pullSince(db, body.cursor);
   });
 
   // ---- Folienbilder ----

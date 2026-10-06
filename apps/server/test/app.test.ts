@@ -111,6 +111,19 @@ describe('HTTP-API', () => {
     expect(detail.jobs.map((j: { kind: string }) => j.kind)).toEqual(['summary', 'cards']);
   });
 
+  it('POST /api/sync validiert und liefert Pull-Daten', async () => {
+    const { app, db } = await setup();
+    repo.createModule(db, { name: 'M', language: 'en' });
+    const bad = await app.inject({ method: 'POST', url: '/api/sync', payload: { deviceId: '', cursor: 0, push: {} } });
+    expect(bad.statusCode).toBe(400);
+    const ok = await app.inject({
+      method: 'POST', url: '/api/sync',
+      payload: { deviceId: 'phone', cursor: 0, push: { modules: [], notes: [], cards: [], revlog: [] } },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().pull.modules[0].name).toBe('M');
+  });
+
   it('Lernablauf: nächste Karte, bewerten, rückgängig', async () => {
     const { app, db } = await setup();
     const mod = repo.createModule(db, { name: 'M', language: 'en' });
