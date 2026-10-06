@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "android:sync": "vite build && cap sync android",
+    "android:build": "npm run android:sync && cd android && ./gradlew assembleDebug --no-daemon",
+    "android:install": "adb install -r android/app/build/outputs/apk/debug/app-debug.apk"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^8.1.1",

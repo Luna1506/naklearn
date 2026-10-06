@@ -29,7 +29,13 @@
       packages.${system}.default = naklearn;
       homeManagerModules.default = import ./nix/hm-module.nix self;
       devShells.${system}.default = pkgs.mkShell {
-        packages = [ pkgs.nodejs_24 pkgs.poppler-utils pkgs.prefetch-npm-deps ];
+        packages = [ pkgs.nodejs_24 pkgs.poppler-utils pkgs.prefetch-npm-deps pkgs.jdk21 ];
+        shellHook = ''
+          export JAVA_HOME=${pkgs.jdk21.home}
+          export ANDROID_HOME=$HOME/Android/Sdk
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          export PATH=$ANDROID_HOME/platform-tools:$PATH
+        '';
       };
     };
 }
