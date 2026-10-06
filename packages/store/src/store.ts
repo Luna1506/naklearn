@@ -25,6 +25,8 @@ export class LocalStore {
 
   static async open(db: SqlAdapter, opts: { now?: () => number } = {}): Promise<LocalStore> {
     await migrate(db);
+    // Das Handy ist nur eine Kopie: Sync-Seiten können Kinder vor ihren Eltern liefern.
+    await db.execute('PRAGMA foreign_keys = OFF');
     const store = new LocalStore(db, opts.now ?? Date.now);
     let id = await store.getMeta('device_id');
     if (!id) {
@@ -37,6 +39,12 @@ export class LocalStore {
 
   nowMs(): number {
     return this.clock();
+  }
+
+  /** Zeitstempel für eine lokale Änderung: immer neuer als die zuletzt gesehene Version (gegen nachgehende Uhren). */
+  private async editTime(table: 'module' | 'note' | 'card', id: string): Promise<number> {
+    const [r] = await this.db.all<{ updated_at: number }>(`SELECT updated_at FROM ${table} WHERE id = ?`, [id]);
+    return Math.max(this.clock(), (r?.updated_at ?? 0) + 1);
   }
 
   async getMeta(key: string): Promise<string | null> {
@@ -131,7 +139,7 @@ export class LocalStore {
   }
 
   async deleteNote(noteId: string): Promise<void> {
-    const now = this.clock();
+    const now = await this.editTime('note', noteId);
     await this.db.transaction(async () => {
       await this.db.run('UPDATE note SET deleted = 1, updated_at = ?, dirty = 1 WHERE id = ?', [now, noteId]);
       await this.db.run('UPDATE card SET deleted = 1, updated_at = ?, dirty = 1 WHERE note_id = ?', [now, noteId]);
@@ -139,7 +147,7 @@ export class LocalStore {
   }
 
   async setSuspended(cardId: string, suspended: boolean): Promise<void> {
-    await this.db.run('UPDATE card SET suspended = ?, updated_at = ?, dirty = 1 WHERE id = ?', [suspended ? 1 : 0, this.clock(), cardId]);
+    await this.db.run('UPDATE card SET suspended = ?, updated_at = ?, dirty = 1 WHERE id = ?', [suspended ? 1 : 0, await this.editTime('card', cardId), cardId]);
   }
 
   async updateNote(noteId: string, patch: { front: string; back: string }): Promise<void> {
@@ -148,7 +156,7 @@ export class LocalStore {
     const note = toNote(row);
     const ords = note.kind === 'cloze' ? clozeOrdinals(patch.front) : [0];
     if (ords.length === 0) throw new Error('Lückentext ohne Lücke ({{c1::…}})');
-    const now = this.clock();
+    const now = await this.editTime('note', noteId);
     await this.db.transaction(async () => {
       await this.db.run('UPDATE note SET front = ?, back = ?, updated_at = ?, dirty = 1 WHERE id = ?', [patch.front, patch.back, now, noteId]);
       const cards = (await this.db.all('SELECT * FROM card WHERE note_id = ?', [noteId])).map(toCard);
@@ -169,8 +177,12 @@ export class LocalStore {
   async updateModule(id: string, patch: { examDate?: string | null; newPerDay?: number }): Promise<void> {
     const [row] = await this.db.all('SELECT * FROM module WHERE id = ?', [id]);
     if (!row) throw new Error('Modul nicht gefunden');
+    if (patch.examDate !== undefined && patch.examDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(patch.examDate)) {
+      throw new Error('Prüfungsdatum muss JJJJ-MM-TT sein');
+    }
     const m = { ...toModule(row), ...patch };
-    await this.db.run('UPDATE module SET exam_date = ?, new_per_day = ?, updated_at = ?, dirty = 1 WHERE id = ?', [m.examDate, m.newPerDay, this.clock(), id]);
+    const newPerDay = Math.min(500, Math.max(0, Math.round(Number(m.newPerDay) || 0)));
+    await this.db.run('UPDATE module SET exam_date = ?, new_per_day = ?, updated_at = ?, dirty = 1 WHERE id = ?', [m.examDate, newPerDay, await this.editTime('module', id), id]);
   }
 
   async overview(): Promise<StoreOverview> {

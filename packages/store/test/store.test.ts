@@ -71,4 +71,24 @@ describe('LocalStore', () => {
     expect(await store.moduleDetail('nope')).toBeNull();
     expect(await store.listSlides()).toEqual([{ deckId: 'd1', page: 1, image: '1.jpg' }, { deckId: 'd1', page: 2, image: '2.jpg' }]);
   });
+
+  it('Moduleinstellungen werden auf gültige Werte begrenzt', async () => {
+    const { db, store } = await open();
+    await store.updateModule('m1', { newPerDay: 1.6 });
+    await store.updateModule('m1', { newPerDay: -3 });
+    let [m] = await db.all<{ new_per_day: number }>("SELECT new_per_day FROM module WHERE id = 'm1'");
+    expect(m!.new_per_day).toBe(0);
+    await store.updateModule('m1', { newPerDay: 9999 });
+    [m] = await db.all<{ new_per_day: number }>("SELECT new_per_day FROM module WHERE id = 'm1'");
+    expect(m!.new_per_day).toBe(500);
+    await expect(store.updateModule('m1', { examDate: '30.10.2026' })).rejects.toThrow();
+  });
+
+  it('lokale Änderungen sind immer neuer als die zuletzt gesehene Version (Uhr geht nach)', async () => {
+    const { db, store } = await open();
+    await db.run("UPDATE note SET updated_at = ? WHERE id = 'n1'", [NOW + 3_600_000]);
+    await store.updateNote('n1', { front: 'neu', back: 'b' });
+    const [n] = await db.all<{ updated_at: number }>("SELECT updated_at FROM note WHERE id = 'n1'");
+    expect(n!.updated_at).toBeGreaterThan(NOW + 3_600_000);
+  });
 });

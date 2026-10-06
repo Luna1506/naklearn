@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { FileTransfer } from '@capacitor/file-transfer';
 import { Directory, Filesystem } from '@capacitor/filesystem';
+import { atomicDownload } from './atomicDownload.ts';
 import type { ImageStore } from './controller.ts';
 
 const rel = (deckId: string, page: number) => `slides/${deckId}/${page}.jpg`;
@@ -18,10 +19,16 @@ export async function createImageStore(): Promise<ImageStore> {
     },
     async download(url, token, deckId, page, image) {
       await Filesystem.mkdir({ path: `slides/${deckId}`, directory: Directory.Data, recursive: true }).catch(() => {});
-      await FileTransfer.downloadFile({
-        url: `${url}/api/slides/${deckId}/${image}`,
-        path: `${base}/${rel(deckId, page)}`,
-        headers: { authorization: `Bearer ${token}` },
+      await atomicDownload(rel(deckId, page), {
+        download: async (p) => {
+          await FileTransfer.downloadFile({ url: `${url}/api/slides/${deckId}/${image}`, path: `${base}/${p}`, headers: { authorization: `Bearer ${token}` } });
+        },
+        rename: async (from, to) => {
+          await Filesystem.rename({ from, to, directory: Directory.Data, toDirectory: Directory.Data });
+        },
+        remove: async (p) => {
+          await Filesystem.deleteFile({ path: p, directory: Directory.Data });
+        },
       });
     },
     src: (deckId, page) => Capacitor.convertFileSrc(`${base}/${rel(deckId, page)}`),

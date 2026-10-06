@@ -10,7 +10,7 @@
         version = "0.1.0";
         src = self;
         nodejs = pkgs.nodejs_24;
-        npmDepsHash = "sha256-m2ClP6Sh1vQ67A15BOHgM9+NU7zfv/YSyb1y2x1Xogg=";
+        npmDepsHash = "sha256-w+VneIjDRbG+CtocL91yBr7dSyqX/W4YK3Pw6bLJxME=";
         npmBuildScript = "build";
         dontNpmPrune = true;
         nativeBuildInputs = [ pkgs.makeWrapper ];

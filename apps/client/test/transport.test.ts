@@ -18,4 +18,9 @@ describe('httpTransport', () => {
     expect(f.mock.calls[0]![0]).toBe('http://h:1/api/sync');
     expect((f.mock.calls[0]![1]!.headers as Record<string, string>).authorization).toBe('Bearer tok');
   });
+
+  it('bricht hängende Anfragen nach dem Timeout ab', async () => {
+    const t = httpTransport('http://h:1', 'tok', (() => new Promise(() => {})) as unknown as typeof fetch, 50);
+    await expect(t({ deviceId: 'd', cursor: 0, push: { modules: [], notes: [], cards: [], revlog: [] } })).rejects.toThrow(/Zeitüberschreitung/);
+  });
 });

@@ -104,4 +104,39 @@ describe('applyPush', () => {
     expect(repo.getModule(db, mod.id)!.examDate).toBe('2026-10-30');
     expect(getNext(db, {}, Date.now()).counts.new).toBeGreaterThan(0);
   });
+
+  it('eine Löschung auf dem Laptop bleibt bestehen, auch gegen eine neuere Handy-Bearbeitung', () => {
+    const { db, qa, mod } = seeded();
+    repo.deleteNote(db, qa.note.id, 2_000_000);
+    applyPush(db, { ...emptyPush(), notes: [{ ...qa.note, front: 'Handy', updatedAt: 2_100_000 }] });
+    expect(repo.getNote(db, qa.note.id)).toMatchObject({ deleted: true, front: 'Q' });
+    repo.deleteModule(db, mod.id, 2_000_000);
+    applyPush(db, { ...emptyPush(), modules: [{ ...mod, examDate: '2026-10-30', updatedAt: 2_100_000 }] });
+    expect(repo.getModule(db, mod.id)).toBeUndefined();
+  });
+
+  it('Lücken-Karten passen nach dem Push zur gewinnenden Notiz (keine Waisen, keine Doppelten)', () => {
+    const { db, cz } = seeded();
+    // Laptop hat die Notiz später auf c1 + c2 gebracht
+    repo.updateNote(db, cz.note.id, { front: '{{c1::X}} {{c2::Y}}' }, 9000);
+    const laptopC2 = repo.listCardsOfNote(db, cz.note.id).find((c) => c.ordinal === 2)!;
+    // Handy (älter) hatte c2 und c3 angelegt
+    applyPush(db, {
+      ...emptyPush(),
+      notes: [{ ...cz.note, front: '{{c1::X}} {{c2::Y}} {{c3::Z}}', updatedAt: 5000 }],
+      cards: [
+        { id: 'phone-c2', noteId: cz.note.id, ordinal: 2, suspended: false, deleted: false, updatedAt: 5000 },
+        { id: 'phone-c3', noteId: cz.note.id, ordinal: 3, suspended: false, deleted: false, updatedAt: 5000 },
+      ],
+    });
+    const live = repo.listCardsOfNote(db, cz.note.id).filter((c) => !c.deleted);
+    expect(live.map((c) => [c.ordinal, c.id === laptopC2.id || c.ordinal === 1])).toEqual([[1, true], [2, true]]);
+  });
+
+  it('abgelehnte Pushes bekommen eine neue seq, damit das Gerät die Server-Version zieht', () => {
+    const { db, qa } = seeded();
+    const cursor = pullSince(db, 0).cursor;
+    applyPush(db, { ...emptyPush(), notes: [{ ...qa.note, front: 'alt', updatedAt: 1 }] });
+    expect(pullSince(db, cursor).pull.notes.map((n) => n.front)).toEqual(['Q']);
+  });
 });

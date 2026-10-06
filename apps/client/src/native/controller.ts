@@ -67,11 +67,18 @@ export class SyncController {
     try {
       await syncStore(this.store, this.makeTransport(p.url, p.token));
       let missing = 0;
+      let failed = false;
       for (const s of await this.store.listSlides()) {
         if (await this.images.has(s.deckId, s.page)) continue;
+        if (failed) {
+          missing++;
+          continue;
+        }
         try {
           await this.images.download(p.url, p.token, s.deckId, s.page, s.image);
         } catch {
+          // Server vermutlich weg: nicht jedes weitere Bild einzeln versuchen, Rest beim nächsten Sync.
+          failed = true;
           missing++;
         }
       }

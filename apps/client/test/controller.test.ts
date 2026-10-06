@@ -66,8 +66,9 @@ describe('SyncController', () => {
     const transport = async (_r: SyncRequest): Promise<SyncResponse> => (call++ === 0 ? pullWithSlides(3) : { ...pullWithSlides(0), pull: { ...pullWithSlides(0).pull, modules: [], decks: [] } });
     const c = new SyncController(store, images, () => transport);
     await c.pair('http://h:1', 't');
-    expect(images.stored.size).toBe(2);
-    expect(c.state).toMatchObject({ phase: 'idle', imagesMissing: 1 });
+    // nach dem ersten Fehler wird nicht weiter geladen (Server vermutlich weg) – Rest kommt beim nächsten Sync
+    expect(images.stored.size).toBe(1);
+    expect(c.state).toMatchObject({ phase: 'idle', imagesMissing: 2 });
     expect(c.state.lastSync).not.toBeNull();
     const retry = new SyncController(store, fakeImages(), () => transport);
     (retry as unknown as { images: ImageStore }).images = { ...images, download: async (_u, _t, d, p) => void images.stored.add(`${d}/${p}`) };

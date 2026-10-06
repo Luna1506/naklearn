@@ -3,6 +3,7 @@ import { LocalStore, syncStore, type SqlAdapter } from '@naklearn/store';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.ts';
+import { applyPush, pullSince } from '../src/sync.ts';
 import * as repo from '../src/repo.ts';
 import { answer, getNext } from '../src/study.ts';
 import { memDb } from './helpers.ts';
@@ -141,6 +142,39 @@ describe('Sync Handy ↔ Laptop', () => {
     await syncStore(phone, transport);
     expect(repo.getNote(db, c.noteId)!.deleted).toBe(true);
     expect(repo.getCard(db, c.cardId)!.deleted).toBe(true);
+  });
+
+  it('vollständiger Sync über viele Seiten, auch wenn Eltern-Zeilen später geändert wurden', async () => {
+    const { db, deck, phone } = await setup();
+    repo.updateDeck(db, deck.id, { status: 'ready' }, NOW); // Deck bekommt eine höhere seq als seine Notes
+    const paged = async (req: SyncRequest): Promise<SyncResponse> => {
+      applyPush(db, req.push);
+      return pullSince(db, req.cursor, 2);
+    };
+    await syncStore(phone, paged);
+    expect((await phone.overview()).modules[0]).toMatchObject({ total: 3 });
+  });
+
+  it('Handy-Änderung gewinnt gegen die Version, die das Handy gesehen hat – auch bei nachgehender Uhr', async () => {
+    const { db, phone, transport } = await setup();
+    await syncStore(phone, transport);
+    const c = (await phone.next({})).card!;
+    repo.updateNote(db, c.noteId, { front: 'Laptop' }, NOW + 10 * 60_000); // Laptop-Uhr 10 min voraus
+    await syncStore(phone, transport);
+    await phone.updateNote(c.noteId, { front: 'Handy', back: 'B' }); // Handy-Uhr steht noch auf NOW
+    await syncStore(phone, transport);
+    expect(repo.getNote(db, c.noteId)!.front).toBe('Handy');
+  });
+
+  it('abgelehnte (ältere) Handy-Änderung wird durch die Server-Version ersetzt', async () => {
+    const { db, phone, transport } = await setup();
+    await syncStore(phone, transport);
+    const c = (await phone.next({})).card!;
+    await phone.updateNote(c.noteId, { front: 'Handy offline', back: 'B' });
+    repo.updateNote(db, c.noteId, { front: 'Laptop später' }, NOW + 3_600_000);
+    await syncStore(phone, transport);
+    const [row] = await phone.db.all<{ front: string; dirty: number }>('SELECT front, dirty FROM note WHERE id = ?', [c.noteId]);
+    expect(row).toEqual({ front: 'Laptop später', dirty: 0 });
   });
 
   it('Löschungen auf dem Laptop verschwinden vom Handy', async () => {
