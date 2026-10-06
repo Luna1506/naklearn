@@ -24,12 +24,9 @@ export function effectiveDueMs(state: CardState, cardId: string, examDate: strin
   if (daysBetween(today, examDate) <= 0) return state.due;
   if (studyDay(state.due) < examDate) return state.due;
 
-  let target = addDays(examDate, -(1 + (hashString(cardId) % EXAM_BUFFER_DAYS)));
-  if (state.lastReview !== null) {
-    const earliest = addDays(studyDay(state.lastReview), 1);
-    if (target < earliest) target = earliest;
-  }
-  if (target >= examDate) return state.due;
+  const target = addDays(examDate, -(1 + (hashString(cardId) % EXAM_BUFFER_DAYS)));
+  // Schon an oder nach dem eigenen Puffertag gelernt → nicht erneut kappen (sonst jeden Puffertag wieder fällig).
+  if (state.lastReview !== null && studyDay(state.lastReview) >= target) return state.due;
   return dayStartMs(target);
 }
 

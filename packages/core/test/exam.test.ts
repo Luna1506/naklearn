@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { dayStartMs, studyDay } from '../src/day.ts';
-import { effectiveDueMs, newCardLimit } from '../src/exam.ts';
-import { emptyState } from '../src/scheduler.ts';
+import { addDays, dayStartMs, studyDay } from '../src/day.ts';
+import { effectiveDueMs, hashString, newCardLimit } from '../src/exam.ts';
+import { applyReview, emptyState } from '../src/scheduler.ts';
 import type { CardState } from '../src/types.ts';
 
 const at = (iso: string) => new Date(iso).getTime();
@@ -37,12 +37,49 @@ describe('effectiveDueMs', () => {
     const s = review(at('2026-11-20T10:00:00+09:00'), now);
     expect(effectiveDueMs(s, 'c1', '2026-10-30', now)).toBe(s.due);
   });
-  it('zieht eine heute gelernte Karte nicht auf heute vor', () => {
+  it('zieht eine heute gelernte Karte nie auf heute vor', () => {
     const now = at('2026-10-28T10:00:00+09:00');
-    const s = review(at('2026-11-10T10:00:00+09:00'), now);
-    const d = effectiveDueMs(s, 'card-x', '2026-10-30', now);
-    expect(studyDay(d) > studyDay(now)).toBe(true);
-    expect(d).toBe(dayStartMs('2026-10-29'));
+    for (let i = 0; i < 30; i++) {
+      const s = review(at('2026-11-10T10:00:00+09:00'), now);
+      const d = effectiveDueMs(s, `card-${i}`, '2026-10-30', now);
+      expect(d === s.due || studyDay(d) > studyDay(now)).toBe(true);
+    }
+  });
+  it('kappt eine Karte nicht erneut, die an oder nach ihrem Puffertag schon gelernt wurde', () => {
+    const now = at('2026-10-29T10:00:00+09:00');
+    const s = review(at('2026-11-20T10:00:00+09:00'), at('2026-10-27T09:00:00+09:00'));
+    // Alle drei Puffertage (27.–29.) liegen am oder vor dem 27. → keine Karte darf wieder fällig werden
+    for (let i = 0; i < 30; i++) {
+      const id = `card-${i}`;
+      const target = ['2026-10-29', '2026-10-28', '2026-10-27'][hashString(id) % 3]!;
+      const d = effectiveDueMs(s, id, '2026-10-30', now);
+      if (target <= '2026-10-27') expect(d).toBe(s.due);
+    }
+  });
+  it('jede Karte wird im Puffer genau einmal wiederholt – an ihrem eigenen Tag', () => {
+    const exam = '2026-10-30';
+    const counts = new Map<string, string[]>();
+    for (let i = 0; i < 60; i++) {
+      const id = `sim-${i}`;
+      // reife Karte aufbauen, deren FSRS-Fälligkeit nach der Prüfung liegt
+      let s = applyReview(emptyState(), 4, at('2026-09-01T10:00:00+09:00'));
+      while (studyDay(s.due) < exam) s = applyReview(s, 3, s.due + 3_600_000);
+      const days: string[] = [];
+      for (let d = 0; d <= 12; d++) {
+        const day = addDays('2026-10-18', d);
+        if (day >= exam) break;
+        const now = dayStartMs(day) + 6 * 3_600_000;
+        if (effectiveDueMs(s, id, exam, now) < dayStartMs(addDays(day, 1))) {
+          days.push(day);
+          s = applyReview(s, 3, now);
+        }
+      }
+      counts.set(id, days);
+    }
+    for (const [id, days] of counts) {
+      expect(days, id).toHaveLength(1);
+      expect(days[0], id).toBe(addDays(exam, -(1 + (hashString(id) % 3))));
+    }
   });
   it('lässt die Karte, wenn vor der Prüfung kein Tag mehr frei ist', () => {
     const now = at('2026-10-29T10:00:00+09:00');

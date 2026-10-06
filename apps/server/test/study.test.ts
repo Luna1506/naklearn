@@ -1,3 +1,4 @@
+import { addDays, hashString } from '@kartei/core';
 import { describe, expect, it } from 'vitest';
 import * as repo from '../src/repo.ts';
 import { answer, getNext, getOverview, undo } from '../src/study.ts';
@@ -65,7 +66,9 @@ describe('Lern-Service', () => {
     // nach "Einfach" wäre die Karte > 3 Tage weg, darf aber höchstens bis 08.10. reichen
     const due = repo.studyRows(db).find((r) => r.cardId === c.cardId)!;
     expect(due.state.state).toBe(2);
+    // Puffertag der Karte: einer der 3 Tage vor der Prüfung; wurde sie dort schon gelernt (06.10.), bleibt sie weg
+    const target = addDays('2026-10-09', -(1 + (hashString(c.cardId) % 3)));
     const later = getNext(db, { deckId: due.deckId }, new Date('2026-10-08T05:00:00+09:00').getTime());
-    expect(later.counts.review).toBe(1);
+    expect(later.counts.review).toBe(target > '2026-10-06' ? 1 : 0);
   });
 });
