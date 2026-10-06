@@ -5,3 +5,5 @@ export * from './render.ts';
 export * from './day.ts';
 export * from './scheduler.ts';
 export * from './exam.ts';
+export * from './queue.ts';
+export * from './stats.ts';
