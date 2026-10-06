@@ -7,3 +7,5 @@ export * from './scheduler.ts';
 export * from './exam.ts';
 export * from './queue.ts';
 export * from './stats.ts';
+export * from './schemas.ts';
+export * from './migrations.ts';

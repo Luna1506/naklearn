@@ -1,0 +1,14 @@
+{
+  "name": "@kartei/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "TZ=Asia/Seoul vitest run",
+    "dev": "KARTEI_DATA_DIR=../../.devdata node --watch src/main.ts",
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@kartei/core": "*"
+  }
+}
