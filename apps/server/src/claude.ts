@@ -45,11 +45,12 @@ export function createClaudeRunner(opts: { claudePath: string; model: string | n
     new Promise((resolve) => {
       const args = [
         '-p', '--output-format', 'json', '--no-session-persistence',
-        '--tools', 'Read', '--allowedTools', 'Read',
+        '--tools', 'Read',
         '--strict-mcp-config', '--setting-sources', '',
         '--json-schema', JSON.stringify(req.jsonSchema),
       ];
-      for (const d of req.addDirs) args.push('--add-dir', d);
+      // Lesen nur in den Folienordnern erlauben (`//` = absoluter Pfad in Claude-Code-Regeln).
+      for (const d of req.addDirs) args.push('--allowedTools', `Read(/${d.replace(/\/+$/, '')}/**)`, '--add-dir', d);
       if (opts.model) args.push('--model', opts.model);
 
       const child = spawn(opts.claudePath, args, { cwd: req.cwd, stdio: ['pipe', 'pipe', 'pipe'] });

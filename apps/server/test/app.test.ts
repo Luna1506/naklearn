@@ -80,6 +80,22 @@ describe('HTTP-API', () => {
     expect(ok.statusCode).toBe(200);
   });
 
+  it('Loopback mit fremdem Host-Header (DNS-Rebinding) braucht ein Token', async () => {
+    const { app } = await setup();
+    const r = await app.inject({ method: 'GET', url: '/api/overview', headers: { host: 'attacker.example:8742' } });
+    expect(r.statusCode).toBe(401);
+    const ok = await app.inject({ method: 'GET', url: '/api/overview', headers: { host: '127.0.0.1:8742' } });
+    expect(ok.statusCode).toBe(200);
+  });
+
+  it('lehnt schreibende Cross-Origin-Requests ab', async () => {
+    const { app } = await setup();
+    const evil = await app.inject({ method: 'POST', url: '/api/worker/resume', headers: { host: 'localhost:8742', origin: 'http://evil.example' } });
+    expect(evil.statusCode).toBe(403);
+    const same = await app.inject({ method: 'POST', url: '/api/worker/resume', headers: { host: 'localhost:8742', origin: 'http://localhost:8742' } });
+    expect(same.statusCode).toBe(200);
+  });
+
   it('Lernablauf: nächste Karte, bewerten, rückgängig', async () => {
     const { app, db } = await setup();
     const mod = repo.createModule(db, { name: 'M', language: 'en' });

@@ -13,6 +13,13 @@ import * as repo from './repo.ts';
 import { answer, getNext, getOverview, undo } from './study.ts';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+function hostName(host: string | undefined): string {
+  if (!host) return '';
+  if (host.startsWith('[')) return host.slice(0, host.indexOf(']') + 1);
+  return host.split(':')[0]!.toLowerCase();
+}
 
 class NotFound extends Error {}
 
@@ -62,7 +69,17 @@ export function buildApp(deps: {
   if (cfg.webDir) app.register(fastifyStatic, { root: cfg.webDir, prefix: '/' });
 
   app.addHook('onRequest', async (req, reply) => {
-    if (LOOPBACK.has(req.socket.remoteAddress ?? '')) return;
+    // Schreibende Requests von fremden Webseiten (CSRF) ablehnen.
+    const origin = req.headers.origin;
+    if (origin && req.method !== 'GET' && req.method !== 'HEAD') {
+      let sameOrigin = false;
+      try {
+        sameOrigin = new URL(origin).host === req.headers.host;
+      } catch {}
+      if (!sameOrigin) return reply.code(403).send({ error: 'forbidden origin' });
+    }
+    // Ohne Token nur echte lokale Aufrufe – der Host-Header schützt vor DNS-Rebinding.
+    if (LOOPBACK.has(req.socket.remoteAddress ?? '') && LOCAL_HOSTS.has(hostName(req.headers.host))) return;
     if (req.headers.authorization === `Bearer ${cfg.token}`) return;
     return reply.code(401).send({ error: 'unauthorized' });
   });

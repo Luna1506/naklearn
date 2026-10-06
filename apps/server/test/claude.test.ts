@@ -31,6 +31,7 @@ describe('createClaudeRunner', () => {
     expect(log.stdin).toBe('PROMPT-TEXT');
     expect(log.argv).toEqual(expect.arrayContaining(['-p', '--output-format', 'json', '--json-schema', '--add-dir', '/slides/x', '--model', 'sonnet']));
     expect(log.argv[log.argv.indexOf('--tools') + 1]).toBe('Read');
+    expect(log.argv[log.argv.indexOf('--allowedTools') + 1]).toBe('Read(//slides/x/**)');
   });
   it('akzeptiert einen ```json-Block als Fallback', async () => {
     expect((await call('fenced')).res).toEqual({ ok: true, output: { notes: [] } });
