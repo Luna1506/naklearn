@@ -9,6 +9,10 @@
     "start": "node src/main.ts"
   },
   "dependencies": {
-    "@kartei/core": "*"
+    "@fastify/multipart": "^10.1.2",
+    "@fastify/static": "^10.1.5",
+    "@kartei/core": "*",
+    "fastify": "^5.12.5",
+    "zod": "^4.6.5"
   }
 }
