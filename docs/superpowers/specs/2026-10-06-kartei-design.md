@@ -25,7 +25,7 @@ Spaced Repetition wie in Anki – auf dem Handy (Android, offline) und am Laptop
 | Plattformen | Laptop (Web-UI, NixOS) + Android-App |
 | Handy | Offline-first, Sync mit dem Laptop bei Erreichbarkeit |
 | Verbindung | Tailscale |
-| Upload | Nur am Laptop (v1) |
+| Upload | Am Laptop (Teil 1); vom Handy in Teil 2 (PDF wird beim Sync an den Laptop übertragen und dort erzeugt) |
 | Prüfungsformat | Mischung → gemischte Kartentypen |
 | Kartensprache | Pro Modul wählbar; UIUX = Englisch |
 | Folienbilder | Vorschau auf jeder Rückseite + Diagramm-Karten mit Bild auf der Vorderseite |
@@ -34,7 +34,7 @@ Spaced Repetition wie in Anki – auf dem Handy (Android, offline) und am Laptop
 | Kartenerzeugung | `claude -p` (headless Claude Code, Lunas Abo), kein MCP-Server in v1 |
 
 ### Nicht in v1
-Upload vom Handy, MCP-Server („mach mehr Karten zu X“), iOS, FSRS-Parameter-
+MCP-Server („mach mehr Karten zu X“), iOS, FSRS-Parameter-
 Optimierung, Anki-Import/-Export, mehrere Nutzer.
 
 ## 2. Architektur
@@ -325,4 +325,7 @@ Version in `PRAGMA user_version`.
    Laptop lernen. Die Tabellen führen `seq`/`dirty` bereits mit, damit Teil 2
    ohne Migration der Bestandsdaten auskommt.
 2. **Teil 2 – Handy:** Sync-Endpoint, Android-Variante des Clients (Capacitor,
-   lokale SQLite, Folienbilder offline), Koppeln per QR, Tailscale + Firewall.
+   lokale SQLite, Folienbilder offline), Koppeln per QR, Tailscale + Firewall,
+   **Upload vom Handy**: PDF in der App wählen (Modul wählen), Warteschlange auf dem
+   Handy, Übertragung an `POST /api/modules/:id/upload` beim nächsten Sync; erzeugte
+   Karten kommen über den normalen Sync zurück.
