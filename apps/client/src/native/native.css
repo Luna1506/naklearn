@@ -1,0 +1,8 @@
+.native { padding-top: calc(12px + env(safe-area-inset-top)); }
+.full { width: 100%; }
+.sync-status { display: block; width: 100%; text-align: left; font-size: 0.85rem; color: var(--muted); background: none; border: none; padding: 4px 0 10px; }
+.sync-status.error { color: var(--again); }
+.sync-status.unpaired { color: var(--hard); }
+.native .grid { margin-top: 16px; }
+.deck-row { display: flex; justify-content: space-between; width: 100%; padding: 12px; margin-bottom: 8px; text-align: left; }
+.native .card-form label { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; color: var(--muted); font-size: 0.85rem; }

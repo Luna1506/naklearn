@@ -9,12 +9,21 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@capacitor-community/sqlite": "^8.1.1",
+    "@capacitor-mlkit/barcode-scanning": "^8.2.1",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/file-transfer": "^2.0.6",
+    "@capacitor/filesystem": "^8.1.4",
     "@naklearn/core": "*",
     "@naklearn/ui": "*",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "@naklearn/store": "*"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",

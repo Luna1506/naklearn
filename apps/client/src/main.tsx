@@ -1,6 +1,7 @@
 import '@naklearn/ui/study.css';
 import './styles.css';
-import { StrictMode } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { StrictMode, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserPage } from './pages/BrowserPage.tsx';
 import { DeckPage } from './pages/DeckPage.tsx';
@@ -22,8 +23,25 @@ function App() {
   }
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+/** Im Browser das Studio, in der Android-App die Offline-Oberfläche (Handy-Code nur dort geladen). */
+async function boot(): Promise<ReactNode> {
+  if (!Capacitor.isNativePlatform()) return <App />;
+  await import('./native/native.css');
+  const [{ openCapAdapter }, { createImageStore }, { LocalStore }, { SyncController }, { NativeApp }] = await Promise.all([
+    import('./native/capSqlAdapter.ts'),
+    import('./native/images.ts'),
+    import('@naklearn/store'),
+    import('./native/controller.ts'),
+    import('./native/NativeApp.tsx'),
+  ]);
+  const store = await LocalStore.open(await openCapAdapter());
+  const images = await createImageStore();
+  const sync = new SyncController(store, images);
+  return <NativeApp store={store} images={images} sync={sync} />;
+}
+
+const root = createRoot(document.getElementById('root')!);
+boot().then(
+  (ui) => root.render(<StrictMode>{ui}</StrictMode>),
+  (e) => root.render(<pre className="error">Start fehlgeschlagen: {String(e?.message ?? e)}</pre>),
 );
