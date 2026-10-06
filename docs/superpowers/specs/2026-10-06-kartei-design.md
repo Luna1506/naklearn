@@ -50,12 +50,12 @@ Optimierung, Anki-Import/-Export, mehrere Nutzer.
 └────────────────────────────────────────────────┘
 ```
 
-### Monorepo (pnpm workspaces), `~/projects/kartei`
+### Monorepo (npm workspaces), `~/projects/kartei`
 | Paket | Zweck | Abhängigkeiten |
 |---|---|---|
 | `packages/core` | Domänentypen, zod-Schemas (inkl. Sync-Protokoll), FSRS-Wrapper + Prüfungsmodus, Stapel-Bildung, Revlog-Replay, Statistik. Reine Funktionen, kein I/O. | `ts-fsrs`, `zod` |
 | `packages/ui` | React-Lernkomponenten (Lernansicht, Bewertungsleiste, Markdown, Folien-Viewer, Übersicht). Spricht nur mit dem Interface `StudyDataSource`. | `core`, React |
-| `apps/server` | Fastify-Server: DB, Migrationen, PDF-Pipeline, Claude-Runner, Job-Queue, REST/Sync-API, Backups, statische Auslieferung des Web-Builds. | `core`, `better-sqlite3`, `fastify` |
+| `apps/server` | Fastify-Server: DB, Migrationen, PDF-Pipeline, Claude-Runner, Job-Queue, REST/Sync-API, Backups, statische Auslieferung des Web-Builds. Läuft als TypeScript direkt unter Node 24 (Type Stripping, kein Build-Schritt). | `core`, `node:sqlite` (eingebaut), `fastify` |
 | `apps/client` | Vite + React. Build-Variante `web` (Studio + Lernen, `HttpDataSource`) und `android` (Lernen, Sync, Koppeln, `LocalDataSource` auf SQLite). Enthält das Capacitor-Android-Projekt. | `core`, `ui`, Capacitor |
 
 Die Lern- und Planungslogik existiert nur in `core`. Der Server nutzt sie für die
@@ -72,7 +72,7 @@ synchronisierte Zeile hat `updated_at` (ms) und auf dem Server zusätzlich `seq`
 - **deck** (Foliensatz) – `id, module_id, title, pdf_sha256, page_count,
   status ('pending'|'rendering'|'generating'|'ready'|'error'), error,
   position, deleted, updated_at`
-- **slide** – `deck_id, page (1-basiert), text, image (Dateiname .webp)`;
+- **slide** – `deck_id, page (1-basiert), text, image (Dateiname .jpg)`;
   Primärschlüssel `(deck_id, page)`
 - **note** (Inhalt) – `id, deck_id, kind ('qa'|'cloze'|'diagram'), front, back
   (Markdown; bei cloze enthält front `{{c1::…}}`-Lücken), slide_refs (JSON int[]),
@@ -88,13 +88,13 @@ synchronisierte Zeile hat `updated_at` (ms) und auf dem Server zusätzlich `seq`
   (`due, stability, difficulty, state, reps, lapses, last_review, …`),
   jederzeit aus revlog rekonstruierbar.
 - **meta** – Key/Value: `device_id`, `sync_cursor`, `server_url`, `token`,
-  `schema_version`.
+  `seq` (Server). Schemaversion über `PRAGMA user_version`.
 
 Server-only: **job** (`id, deck_id, kind ('render'|'chunk'|'synthesis'),
 chunk_from, chunk_to, status, attempts, error, result_json, created_at`).
 
 Dateien: `~/.local/share/kartei/{kartei.db, pdfs/<sha256>.pdf,
-slides/<deck_id>/<page>.webp, backups/, config.json}`.
+slides/<deck_id>/<page>.jpg, backups/, config.json}`.
 
 ## 4. Kartenerzeugung
 
@@ -102,8 +102,8 @@ slides/<deck_id>/<page>.webp, backups/, config.json}`.
 1. **Upload** (Studio, Drag & Drop, mehrere PDFs auf einmal) in ein Modul.
    SHA-256 berechnen; gleiche PDF im selben Modul → Ablehnung mit Hinweis.
    Titel = Dateiname ohne Endung (editierbar).
-2. **Render-Job:** `pdftoppm -r 110` → PNG → WebP (Breite ≤ 1280 px, `sharp`),
-   `pdftotext -layout -f N -l N` je Seite. Speichert `slide`-Zeilen.
+2. **Render-Job:** `pdftoppm -jpeg -jpegopt quality=80 -scale-to 1280` (keine nativen
+   Node-Abhängigkeiten), `pdftotext -layout -f N -l N` je Seite. Speichert `slide`-Zeilen.
 3. **Chunk-Jobs:** Folien in Abschnitte zu 15 Seiten. Pro Abschnitt ein
    `claude -p`-Aufruf (Details unten).
 4. **Synthese-Job:** ein Aufruf mit dem Gesamttext des Foliensatzes und der
@@ -114,9 +114,11 @@ slides/<deck_id>/<page>.webp, backups/, config.json}`.
 
 ### Claude-Aufruf
 ```
-claude -p <prompt> --output-format json --allowedTools Read \
-       --add-dir <slides/<deck_id>> [--model <config.claudeModel>]
+claude -p --output-format json --no-session-persistence --tools Read \
+       --allowedTools Read --strict-mcp-config --setting-sources "" \
+       --json-schema <schema> --add-dir <slides/<deck_id>> [--model <config.claudeModel>]
 ```
+Prompt über stdin.
 - Läuft als User `luna` und nutzt deren eingeloggte Claude-Code-Session.
 - Arbeitsverzeichnis: ein leeres temporäres Verzeichnis; Claude darf nur lesen.
 - Prompt enthält: Modulsprache, Foliensatztitel, Gliederung (erste Zeile jeder
@@ -129,8 +131,8 @@ claude -p <prompt> --output-format json --allowedTools Read \
   Erklär-, Vergleichs- und Aufzähl-Fragen (qa), Lückentexten (cloze) für
   Merksätze/Listen und Diagramm-Karten für aussagekräftige Abbildungen;
   Fachbegriffe exakt wie auf den Folien.
-- Ausgabeschema (zod-validiert, aus dem `result`-Feld des JSON-Outputs extrahiert;
-  ein ```json-Block wird ebenfalls akzeptiert):
+- Ausgabeschema (als JSON-Schema per `--json-schema` erzwungen, aus `structured_output`
+  gelesen, Fallback `result`; zusätzlich zod-validiert):
   ```json
   { "notes": [ { "kind": "qa|cloze|diagram", "front": "…", "back": "…",
                  "slides": [12, 13], "frontImagePage": 12, "tags": ["…"] } ] }
@@ -259,7 +261,7 @@ Response: { cursor,
 - Der Client merkt sich, welche lokalen Änderungen noch nicht bestätigt sind
   (`dirty`-Flag), und markiert sie nach erfolgreicher Antwort als synchron.
 
-`GET /api/slides/:deckId/:page.webp` – Folienbilder. Das Handy lädt nach dem
+`GET /api/slides/:deckId/:page.jpg` – Folienbilder. Das Handy lädt nach dem
 Sync alle fehlenden Bilder in den App-Speicher (Capacitor Filesystem).
 
 ### Auslöser
@@ -269,23 +271,23 @@ Knopf. Fehler werden still wiederholt; der Status zeigt den letzten Erfolg.
 ## 8. NixOS-Integration und Build
 
 ### Projekt-Flake (`~/projects/kartei/flake.nix`)
-- `packages.x86_64-linux.default` – Server + Web-Build (pnpm), Wrapper mit
+- `packages.x86_64-linux.default` – Server + Web-Build (npm), Wrapper mit
   `poppler-utils` im `PATH`.
 - `homeManagerModules.default` – `services.kartei = { enable; port (8742);
   dataDir (~/.local/share/kartei); claudePath (~/.local/bin/claude);
   claudeModel (null) }` → `systemd.user.services.kartei` (Restart=on-failure).
-- `devShells.default` – Node 22, pnpm, JDK 21, `ANDROID_HOME=~/Android/Sdk`,
+- `devShells.default` – Node 24, JDK 21, poppler-utils, `ANDROID_HOME=~/Android/Sdk`,
   Gradle-Override für `aapt2` aus dem SDK (Mavens aapt2 läuft unter NixOS nicht).
 
 ### Dotfiles (`~/nixos/dotfiles`)
-- Input `kartei` (zunächst `path:/home/luna/projects/kartei`).
+- Input `kartei` (`git+file:///home/luna/projects/kartei`, nur committete Dateien).
 - Home-Manager: `services.kartei.enable = true;`
 - NixOS: `services.tailscale.enable = true;`,
   `networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8742 ];`
 - Anwenden über Lunas `rebuild`-Skript.
 
 ### Android
-`pnpm android:build` (Vite-Build Variante `android` → `cap sync` →
+`npm run android:build` (Vite-Build Variante `android` → `cap sync` →
 `gradlew assembleDebug`), Installation per `adb install`. App-ID
 `de.luna.kartei`. Plugins: `@capacitor-community/sqlite`,
 `@capacitor/filesystem`, `@capacitor-mlkit/barcode-scanning`.
@@ -296,7 +298,7 @@ die letzten 7 bleiben.
 
 ### Migrationen
 Nummerierte SQL-Migrationen in `core` (gemeinsam für Server und Handy),
-`schema_version` in `meta`.
+Version in `PRAGMA user_version`.
 
 ## 9. Tests
 
@@ -315,3 +317,12 @@ Nummerierte SQL-Migrationen in `core` (gemeinsam für Server und Handy),
 - **Abnahme:** Die 8 UIUX-Foliensätze echt erzeugen und Stichproben prüfen;
   App im Android-Emulator und auf Lunas Handy; Offline lernen → Sync → Laptop
   zeigt denselben Stand.
+
+## 10. Umsetzung in zwei Teilen
+
+1. **Teil 1 – Laptop:** core, server (ohne Sync-Endpoint), Web-Client (Studio +
+   Lernen), Nix-Paket + Home-Manager-Dienst. Ergebnis: Karten erzeugen und am
+   Laptop lernen. Die Tabellen führen `seq`/`dirty` bereits mit, damit Teil 2
+   ohne Migration der Bestandsdaten auskommt.
+2. **Teil 2 – Handy:** Sync-Endpoint, Android-Variante des Clients (Capacitor,
+   lokale SQLite, Folienbilder offline), Koppeln per QR, Tailscale + Firewall.
