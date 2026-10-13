@@ -13,7 +13,7 @@ import * as repo from './repo.ts';
 import { answer, getNext, getOverview, undo } from './study.ts';
 import { applyPush, pullSince } from './sync.ts';
 import QRCode from 'qrcode';
-import { detectPublicUrl, pairingPayload } from './pair.ts';
+import { pairingPayload } from './pair.ts';
 import { SyncRequestSchema } from '@naklearn/core';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
@@ -258,7 +258,7 @@ export function buildApp(deps: {
   // ---- Koppeln ----
   app.get('/api/pair', async (req, reply) => {
     if (!LOOPBACK.has(req.socket.remoteAddress ?? '')) return reply.code(403).send({ error: 'Koppeln nur am Laptop' });
-    const url = await (deps.publicUrl ?? (() => detectPublicUrl(cfg.port, process.env)))();
+    const url = cfg.publicUrl;
     const payload = url ? pairingPayload(url, cfg.token) : null;
     const qrSvg = payload ? await QRCode.toString(payload, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }) : null;
     return { url, token: cfg.token, payload, qrSvg };

@@ -49,7 +49,12 @@ export function clearSessionCookie(secure: boolean): string {
 /** Bremse gegen Passwort-Durchprobieren, im Speicher pro IP. */
 export class LoginLimiter {
   private entries = new Map<string, { first: number; count: number; until: number }>();
-  constructor(private max = 5, private lockMs = 15 * 60_000) {}
+  private max: number;
+  private lockMs: number;
+  constructor(max = 5, lockMs = 15 * 60_000) {
+    this.max = max;
+    this.lockMs = lockMs;
+  }
 
   blocked(ip: string, now: number): boolean {
     const e = this.entries.get(ip);

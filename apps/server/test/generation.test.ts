@@ -102,7 +102,7 @@ describe('Worker: Zusammenfassung → Karten', () => {
     enqueueDeck(db, deck.id);
     await drain();
     expect(worker.status()).toMatchObject({ state: 'paused', pausedUntil: null });
-    expect(worker.status().pauseReason).toContain('nicht eingeloggt');
+    expect(worker.status().pauseReason).toContain('Claude-Token ungültig');
     worker.resume();
     await drain();
     expect(repo.getDeck(db, deck.id)!.status).toBe('ready');

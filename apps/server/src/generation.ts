@@ -217,7 +217,7 @@ export function createWorker(deps: {
   function handleFailure(job: Job, r: Extract<ClaudeResult, { ok: false }>) {
     if (r.kind === 'auth') {
       setJob(job.id, { status: 'queued', error: r.message });
-      pause('claude ist nicht eingeloggt – bitte `claude` im Terminal starten und anmelden, dann „Fortsetzen“.', null);
+      pause('Claude-Token ungültig oder abgelaufen – am Laptop `claude setup-token` ausführen, Token in `~/naklearn/.env` auf torte eintragen, `docker compose up -d`, dann „Fortsetzen“.', null);
       return;
     }
     if (r.kind === 'rate_limit') {

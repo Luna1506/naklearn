@@ -14,6 +14,7 @@ async function setup() {
   for (const d of ['pdfs', 'slides', 'backups']) mkdirSync(path.join(dataDir, d), { recursive: true });
   const cfg: Config = {
     dataDir, port: 0, host: '127.0.0.1', token: 'secret', deviceId: 'laptop',
+    password: 'pw', sessionSecret: 'session-secret', publicUrl: 'https://naklearn.example',
     claudePath: '/bin/false', summaryModel: null, cardsModel: null, webDir: null,
   };
   const db = memDb();
@@ -128,7 +129,7 @@ describe('HTTP-API', () => {
     const { app } = await setup();
     const local = await app.inject({ method: 'GET', url: '/api/pair' });
     expect(local.statusCode).toBe(200);
-    expect(local.json()).toMatchObject({ token: 'secret', url: 'http://test.ts.net:8742' });
+    expect(local.json()).toMatchObject({ token: 'secret', url: 'https://naklearn.example' });
     expect(local.json().qrSvg).toContain('<svg');
     const remote = await app.inject({ method: 'GET', url: '/api/pair', headers: { authorization: 'Bearer secret' }, remoteAddress: '100.64.1.2' });
     expect(remote.statusCode).toBe(403);
