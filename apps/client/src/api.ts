@@ -21,10 +21,24 @@ export interface WorkerStatus {
 export type DeckWithCount = Deck & { noteCount: number };
 export type NoteListItem = Note & { deckTitle: string; cards: Card[] };
 
+/** Nicht (mehr) angemeldet – die Oberfläche zeigt dann die Login-Seite. */
+export class Unauthorized extends Error {}
+const unauthorizedHandlers = new Set<() => void>();
+export function onUnauthorized(fn: () => void): () => void {
+  unauthorizedHandlers.add(fn);
+  return () => {
+    unauthorizedHandlers.delete(fn);
+  };
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
+  if (res.status === 401 && url !== '/api/login') {
+    for (const fn of unauthorizedHandlers) fn();
+    throw new Unauthorized(body?.error ?? 'Nicht angemeldet');
+  }
   if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
   return body as T;
 }
@@ -43,6 +57,9 @@ function qs(params: Record<string, string | undefined>): string {
 }
 
 export const api = {
+  login: (password: string) => request<{ ok: true }>('/api/login', json('POST', { password })),
+  logout: () => request<{ ok: true }>('/api/logout', { method: 'POST' }),
+  rotateToken: () => request<{ ok: true }>('/api/pair/rotate', { method: 'POST' }),
   overview: () => request<Overview>('/api/overview'),
   pair: () => request<{ url: string | null; token: string; payload: string | null; qrSvg: string | null }>('/api/pair'),
   createModule: (m: { name: string; language: Language; examDate?: string | null; newPerDay?: number }) =>

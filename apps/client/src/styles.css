@@ -70,3 +70,6 @@ button.small { font-size: 0.8rem; padding: 3px 8px; }
 .qr svg { width: 100%; height: auto; display: block; }
 .steps li { margin: 6px 0; }
 .token { word-break: break-all; }
+.login { max-width: 360px; margin-top: 15vh; }
+.login form { display: flex; flex-direction: column; gap: 12px; }
+.login label { display: flex; flex-direction: column; gap: 4px; }

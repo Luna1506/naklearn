@@ -1,7 +1,9 @@
 import '@naklearn/ui/study.css';
 import './styles.css';
 import { Capacitor } from '@capacitor/core';
-import { StrictMode, type ReactNode } from 'react';
+import { StrictMode, useEffect, useState, type ReactNode } from 'react';
+import { onUnauthorized } from './api.ts';
+import { LoginPage } from './pages/LoginPage.tsx';
 import { createRoot } from 'react-dom/client';
 import { BrowserPage } from './pages/BrowserPage.tsx';
 import { DeckPage } from './pages/DeckPage.tsx';
@@ -23,9 +25,16 @@ function App() {
   }
 }
 
+/** Studio im Browser: bei 401 die Login-Seite statt der aktuellen Seite. */
+function Studio() {
+  const [needLogin, setNeedLogin] = useState(false);
+  useEffect(() => onUnauthorized(() => setNeedLogin(true)), []);
+  return needLogin ? <LoginPage /> : <App />;
+}
+
 /** Im Browser das Studio, in der Android-App die Offline-Oberfläche (Handy-Code nur dort geladen). */
 async function boot(): Promise<ReactNode> {
-  if (!Capacitor.isNativePlatform()) return <App />;
+  if (!Capacitor.isNativePlatform()) return <Studio />;
   await import('./native/native.css');
   const [{ openCapAdapter }, { createImageStore }, { LocalStore }, { SyncController }, { NativeApp }] = await Promise.all([
     import('./native/capSqlAdapter.ts'),

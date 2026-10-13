@@ -30,6 +30,7 @@ export function Home() {
         </button>
         <a href={href('browse')}>Alle Karten durchsuchen</a>
         <a href={href('pair')}>Handy koppeln</a>
+        <button className="link" onClick={async () => { await api.logout(); location.reload(); }}>Abmelden</button>
       </section>
 
       <section className="grid">

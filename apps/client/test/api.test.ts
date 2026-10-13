@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HttpDataSource, api } from '../src/api.ts';
+import { HttpDataSource, Unauthorized, api, onUnauthorized } from '../src/api.ts';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -17,5 +17,28 @@ describe('api', () => {
     await src.next({ moduleId: 'm1' });
     expect(fetchMock.mock.calls[0]![0]).toBe('/api/study/next?moduleId=m1');
     expect(src.slideUrl('d1', 3)).toBe('/api/slides/d1/3.jpg');
+  });
+});
+
+describe('Anmeldung', () => {
+  it('401 meldet sich bei den Abonnenten und wirft Unauthorized', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 })));
+    const seen = vi.fn();
+    const off = onUnauthorized(seen);
+    await expect(api.overview()).rejects.toBeInstanceOf(Unauthorized);
+    expect(seen).toHaveBeenCalledTimes(1);
+    off();
+    await expect(api.overview()).rejects.toBeInstanceOf(Unauthorized);
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+  it('falsches Passwort beim Login löst keine Login-Seite aus, sondern zeigt die Meldung', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'Falsches Passwort' }), { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const seen = vi.fn();
+    const off = onUnauthorized(seen);
+    await expect(api.login('x')).rejects.toThrow('Falsches Passwort');
+    expect(seen).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith('/api/login', expect.objectContaining({ method: 'POST', body: JSON.stringify({ password: 'x' }) }));
+    off();
   });
 });
