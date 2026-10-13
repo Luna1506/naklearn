@@ -19,8 +19,15 @@ if ssh "$HOST" "docker run --rm -v $VOLUME:/data busybox test -e /data/naklearn.
   exit 1
 fi
 
-echo "→ Stoppe den Laptop-Dienst"
-systemctl --user stop naklearn || true
+echo "→ Stoppe und deaktiviere den Laptop-Dienst"
+# deaktivieren, damit er nach Neustart/Login nicht wieder Lernstände annimmt, die torte nie erreichen
+if systemctl --user cat naklearn >/dev/null 2>&1; then
+  systemctl --user disable --now naklearn
+fi
+if systemctl --user is-active --quiet naklearn; then
+  echo "Der Laptop-Dienst naklearn läuft noch – Abbruch, nichts übertragen."
+  exit 1
+fi
 BEFORE="$(node -e "$COUNT_JS" "$SRC/naklearn.db")"
 node -e 'const {DatabaseSync}=require("node:sqlite");new DatabaseSync(process.argv[1]).prepare("VACUUM INTO ?").run(process.argv[2])' "$SRC/naklearn.db" "$STAGE/naklearn.db"
 
@@ -40,4 +47,5 @@ AFTER="$(ssh "$HOST" "docker exec naklearn node -e '$COUNT_JS' /data/naklearn.db
 echo "Laptop: $BEFORE"
 echo "torte:  $AFTER"
 [ "$BEFORE" = "$AFTER" ] && echo "Umzug fertig – Kartenzahlen stimmen." || { echo "Kartenzahlen weichen ab!"; exit 1; }
-echo "Hinweis: Laptop-Dienst bleibt gestoppt; Daten unter $SRC bleiben als Sicherung liegen."
+echo "Hinweis: Laptop-Dienst ist deaktiviert; Daten unter $SRC bleiben als Sicherung liegen."
+echo "Ab jetzt nur noch auf https://naklearn.torte-tech.de lernen; das Handy erst nach dem Neu-Koppeln benutzen."

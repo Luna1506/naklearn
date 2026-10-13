@@ -69,7 +69,9 @@ export function buildApp(deps: {
   // nur dem direkten Gegenüber vertrauen, req.ip ist dann die vom Proxy angehängte Client-Adresse.
   const app = Fastify({ logger: false, bodyLimit: 16 << 20, trustProxy: (_addr: string, hop: number) => hop === 0 });
   const limiter = new LoginLimiter();
-  const hasSession = (req: FastifyRequest) => verifySession(readCookie(req.headers.cookie, SESSION_COOKIE), cfg.sessionSecret, now());
+  // Das Passwort fließt in den Schlüssel ein: ein neues Passwort beendet alle bestehenden Sitzungen.
+  const sessionKey = `${cfg.sessionSecret}\0${cfg.password}`;
+  const hasSession = (req: FastifyRequest) => verifySession(readCookie(req.headers.cookie, SESSION_COOKIE), sessionKey, now());
   const hasToken = (req: FastifyRequest) => req.headers.authorization === `Bearer ${cfg.token}`;
 
   app.register(multipart, { limits: { fileSize: 300 * 1024 * 1024, files: 50 } });
@@ -113,7 +115,7 @@ export function buildApp(deps: {
       return reply.code(401).send({ error: 'Falsches Passwort' });
     }
     limiter.reset(req.ip);
-    reply.header('set-cookie', sessionCookie(createSession(cfg.sessionSecret, t), req.protocol === 'https'));
+    reply.header('set-cookie', sessionCookie(createSession(sessionKey, t), req.protocol === 'https'));
     return { ok: true };
   });
 

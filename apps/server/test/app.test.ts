@@ -275,3 +275,16 @@ describe('Anmeldung', () => {
     expect((await raw.inject({ method: 'GET', url: '/api/overview', headers: { authorization: `Bearer ${cfg.token}` } })).statusCode).toBe(200);
   });
 });
+
+describe('Passwortwechsel', () => {
+  it('beendet bestehende Sitzungen', async () => {
+    const { raw, db, cfg } = await setup();
+    const cookie = await login(raw);
+    const worker = { wake: () => {}, resume: () => {}, status: () => ({ state: 'idle' as const, pauseReason: null, pausedUntil: null, current: null, queued: 0 }) };
+    const now = () => new Date('2026-10-13T10:00:00+09:00').getTime();
+    const restarted = buildApp({ db, cfg, worker, now });
+    expect((await restarted.inject({ method: 'GET', url: '/api/overview', headers: { cookie } })).statusCode).toBe(200);
+    const newPassword = buildApp({ db, cfg: { ...cfg, password: 'neu' }, worker, now });
+    expect((await newPassword.inject({ method: 'GET', url: '/api/overview', headers: { cookie } })).statusCode).toBe(401);
+  });
+});
