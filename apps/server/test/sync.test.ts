@@ -219,4 +219,21 @@ describe('Sicht der Person', () => {
     expect(repo.getModule(db, mod.id)!.name).toBe('Neu');
     expect(repo.getMyModule(db, U, mod.id)!.examDate).toBe('2026-12-01');
   });
+
+  it('abgelehnter Modul-Push (veraltet) lässt das Gerät die Server-Version ziehen', () => {
+    const { db, mod, U } = seeded();
+    repo.updateMembership(db, U, mod.id, { examDate: '2026-12-01' }, 8000);
+    const cursor = pullSince(db, U, 0).cursor;
+    applyPush(db, U, { ...emptyPush(), modules: [{ ...mod, examDate: '2026-11-11', updatedAt: 7000 }] });
+    expect(repo.getMyModule(db, U, mod.id)!.examDate).toBe('2026-12-01');
+    expect(pullSince(db, U, cursor).pull.modules).toEqual([expect.objectContaining({ id: mod.id, examDate: '2026-12-01' })]);
+  });
+
+  it('Modul-Push eines Nicht-Mitglieds lässt das Gerät das Modul als gelöscht ziehen', () => {
+    const { db, mod } = seeded();
+    const mia = addUser(db, 'mia');
+    const cursor = pullSince(db, mia, 0).cursor;
+    applyPush(db, mia, { ...emptyPush(), modules: [{ ...mod, updatedAt: 7000 }] });
+    expect(pullSince(db, mia, cursor).pull.modules).toEqual([expect.objectContaining({ id: mod.id, deleted: true })]);
+  });
 });

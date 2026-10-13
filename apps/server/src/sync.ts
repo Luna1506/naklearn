@@ -61,10 +61,12 @@ export function applyPush(db: Db, userId: string, push: SyncPush): void {
         if (!cur.deleted && memberIds(db, m.id).length === 0) deleteModule(db, m.id, Math.max(m.updatedAt, cur.updated_at + 1));
         continue;
       }
-      if (!mine) continue;
+      if (!mine) { bump(db, 'module', m.id); continue; }
       // Gemeinsame Felder (Name, Sprache) schreibt nie ein Gerät; nur die persönliche Mitgliedschaft (LWW).
       const ms = db.prepare('SELECT updated_at FROM membership WHERE user_id = ? AND module_id = ?').get(userId, m.id) as { updated_at: number };
+      // Abgelehnt: neue seq, damit das Gerät die maßgebliche Version zieht.
       if (m.updatedAt > ms.updated_at) updateMembership(db, userId, m.id, { examDate: m.examDate, newPerDay: m.newPerDay }, m.updatedAt);
+      else bump(db, 'module', m.id);
     }
     for (const n of push.notes) {
       const cur = current(db, 'note', n.id);
