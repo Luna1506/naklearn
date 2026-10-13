@@ -2,14 +2,18 @@ import '@naklearn/ui/study.css';
 import './styles.css';
 import { Capacitor } from '@capacitor/core';
 import { StrictMode, useEffect, useState, type ReactNode } from 'react';
-import { onUnauthorized } from './api.ts';
+import { api, onUnauthorized, type Me } from './api.ts';
+import { MeContext } from './me.tsx';
+import { AccountPage } from './pages/AccountPage.tsx';
+import { AllModulesPage } from './pages/AllModulesPage.tsx';
+import { InvitePage } from './pages/InvitePage.tsx';
+import { PeoplePage } from './pages/PeoplePage.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { createRoot } from 'react-dom/client';
 import { BrowserPage } from './pages/BrowserPage.tsx';
 import { DeckPage } from './pages/DeckPage.tsx';
 import { Home } from './pages/Home.tsx';
 import { ModulePage } from './pages/ModulePage.tsx';
-import { PairPage } from './pages/PairPage.tsx';
 import { StudyPage } from './pages/StudyPage.tsx';
 import { useRoute } from './router.ts';
 
@@ -20,16 +24,26 @@ function App() {
     case 'deck': return <DeckPage id={route.params.id!} />;
     case 'browse': return <BrowserPage params={route.params} />;
     case 'study': return <StudyPage params={route.params} />;
-    case 'pair': return <PairPage />;
+    case 'all': return <AllModulesPage />;
+    case 'account': return <AccountPage />;
+    case 'people': return <PeoplePage />;
     default: return <Home />;
   }
 }
 
-/** Studio im Browser: bei 401 die Login-Seite statt der aktuellen Seite. */
+/** Studio im Browser: Einladungslinks ohne Login, sonst bei 401 die Login-Seite. */
 function Studio() {
+  const route = useRoute();
   const [needLogin, setNeedLogin] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
+  const invite = route.name === 'invite';
   useEffect(() => onUnauthorized(() => setNeedLogin(true)), []);
-  return needLogin ? <LoginPage /> : <App />;
+  useEffect(() => {
+    if (!invite) api.me().then(setMe, () => {});
+  }, [invite]);
+  if (invite) return <InvitePage token={route.params.token!} />;
+  if (needLogin) return <LoginPage />;
+  return <MeContext.Provider value={me}><App /></MeContext.Provider>;
 }
 
 /** Im Browser das Studio, in der Android-App die Offline-Oberfläche (Handy-Code nur dort geladen). */

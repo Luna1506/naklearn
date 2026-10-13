@@ -1,6 +1,7 @@
 import type { Language, Module } from '@naklearn/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type DeckWithCount } from '../api.ts';
+import { TopNav } from '../me.tsx';
 import { href, navigate } from '../router.ts';
 
 const STATUS: Record<string, string> = {
@@ -11,6 +12,8 @@ export function ModulePage({ id }: { id: string }) {
   const [mod, setMod] = useState<Module | null>(null);
   const [decks, setDecks] = useState<DeckWithCount[]>([]);
   const [form, setForm] = useState({ name: '', language: 'en' as Language, examDate: '', newPerDay: 20 });
+  const [mine, setMine] = useState(true);
+  const [members, setMembers] = useState(1);
   const [msg, setMsg] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -20,6 +23,8 @@ export function ModulePage({ id }: { id: string }) {
       const r = await api.module(id);
       setMod(r.module);
       setDecks(r.decks);
+      setMine(r.mine);
+      setMembers(r.memberCount);
       setForm({ name: r.module.name, language: r.module.language, examDate: r.module.examDate ?? '', newPerDay: r.module.newPerDay });
     } catch (e) {
       setMsg(String((e as Error).message));
@@ -54,6 +59,7 @@ export function ModulePage({ id }: { id: string }) {
 
   return (
     <main className="page">
+      <TopNav />
       <header className="topbar">
         <a href={href('home')}>← Übersicht</a>
         <h1>{mod.name}</h1>
@@ -98,11 +104,17 @@ export function ModulePage({ id }: { id: string }) {
 
       <section className="card-form">
         <h2>Einstellungen</h2>
+        {!mine && (
+          <p className="warn">
+            Dieses Modul ist nicht in deinen Modulen.{' '}
+            <button className="primary" onClick={async () => { await api.joinModule(id); await load(); }}>Hinzufügen</button>
+          </p>
+        )}
         <form
           onSubmit={async (e) => {
             e.preventDefault();
             try {
-              await api.updateModule(id, { name: form.name, language: form.language, examDate: form.examDate || null, newPerDay: form.newPerDay });
+              await api.updateModule(id, mine ? { name: form.name, language: form.language, examDate: form.examDate || null, newPerDay: form.newPerDay } : { name: form.name, language: form.language });
               setMsg('Gespeichert.');
               await load();
             } catch (err) {
@@ -117,21 +129,34 @@ export function ModulePage({ id }: { id: string }) {
               <option value="de">Deutsch</option>
             </select>
           </label>
-          <label>Prüfungsdatum <input type="date" value={form.examDate} onChange={(e) => setForm({ ...form, examDate: e.target.value })} /></label>
-          <label>Neue Karten pro Tag (mindestens) <input type="number" min={0} max={500} value={form.newPerDay} onChange={(e) => setForm({ ...form, newPerDay: Number(e.target.value) })} /></label>
+          {mine && <label>Prüfungsdatum <input type="date" value={form.examDate} onChange={(e) => setForm({ ...form, examDate: e.target.value })} /></label>}
+          {mine && <label>Neue Karten pro Tag (mindestens) <input type="number" min={0} max={500} value={form.newPerDay} onChange={(e) => setForm({ ...form, newPerDay: Number(e.target.value) })} /></label>}
           <button className="primary" type="submit">Speichern</button>
         </form>
-        <p className="muted small">Die Sprache gilt für neu erzeugte Karten. Mit Prüfungsdatum verteilt NAKLearn die neuen Karten so, dass du 3 Tage vorher alles gesehen hast.</p>
-        <button
-          className="danger"
-          onClick={async () => {
-            if (!confirm(`Modul „${mod.name}“ wirklich löschen?`)) return;
-            await api.deleteModule(id);
-            navigate('home');
-          }}
-        >
-          Modul löschen
-        </button>
+        <p className="muted small">Die Sprache gilt für neu erzeugte Karten. Prüfungsdatum und neue Karten pro Tag gelten nur für dich; Name und Sprache für alle. Mit Prüfungsdatum verteilt NAKLearn die neuen Karten so, dass du 3 Tage vorher alles gesehen hast.</p>
+        {mine && (
+          <button
+            onClick={async () => {
+              await api.leaveModule(id);
+              navigate('home');
+            }}
+          >
+            Aus meinen Modulen entfernen
+          </button>
+        )}{' '}
+        {mine && members <= 1 && (
+          <button
+            className="danger"
+            onClick={async () => {
+              if (!confirm(`Modul „${mod.name}“ für alle löschen?`)) return;
+              await api.deleteModule(id);
+              navigate('home');
+            }}
+          >
+            Für alle löschen
+          </button>
+        )}
+        {members > 1 && <p className="muted small">{members} Personen lernen dieses Modul – löschen geht erst, wenn nur noch du es hast.</p>}
       </section>
     </main>
   );

@@ -73,3 +73,5 @@ button.small { font-size: 0.8rem; padding: 3px 8px; }
 .login { max-width: 360px; margin-top: 15vh; }
 .login form { display: flex; flex-direction: column; gap: 12px; }
 .login label { display: flex; flex-direction: column; gap: 4px; }
+.topnav { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 8px 0 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+.topnav .spacer { flex: 1; }

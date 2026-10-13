@@ -1,16 +1,17 @@
-import type { Language } from '@naklearn/core';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Overview } from '../api.ts';
+import { TopNav } from '../me.tsx';
 import { href, navigate } from '../router.ts';
 
 export function Home() {
   const [ov, setOv] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState('');
-  const [language, setLanguage] = useState<Language>('en');
 
   const load = useCallback(() => {
-    api.overview().then(setOv, (e) => setError(String(e.message)));
+    api.overview().then((o) => {
+      if (o.modules.length === 0) navigate('all');
+      else setOv(o);
+    }, (e) => setError(String(e.message)));
   }, []);
   useEffect(load, [load]);
 
@@ -18,6 +19,7 @@ export function Home() {
 
   return (
     <main className="page">
+      <TopNav />
       <header className="topbar">
         <h1>NAKLearn</h1>
         {ov && <span className="muted">Heute gelernt: {ov.studiedToday} · Serie: {ov.streak} {ov.streak === 1 ? 'Tag' : 'Tage'}</span>}
@@ -29,8 +31,6 @@ export function Home() {
           Heute lernen · {totalDue} Karten
         </button>
         <a href={href('browse')}>Alle Karten durchsuchen</a>
-        <a href={href('pair')}>Handy koppeln</a>
-        <button className="link" onClick={async () => { await api.logout(); location.reload(); }}>Abmelden</button>
       </section>
 
       <section className="grid">
@@ -53,28 +53,6 @@ export function Home() {
             {m.warn && <div className="warn small">⚠ {m.newTarget} neue Karten/Tag nötig, um bis 3 Tage vor der Prüfung alles zu sehen</div>}
           </a>
         ))}
-      </section>
-
-      <section className="card-form">
-        <h2>Neues Modul</h2>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            try {
-              const m = await api.createModule({ name, language });
-              navigate('module', { id: m.id });
-            } catch (err) {
-              setError(String((err as Error).message));
-            }
-          }}
-        >
-          <input placeholder="Name, z. B. UI/UX Design" value={name} onChange={(e) => setName(e.target.value)} required />
-          <select value={language} onChange={(e) => setLanguage(e.target.value as Language)}>
-            <option value="en">Karten auf Englisch</option>
-            <option value="de">Karten auf Deutsch</option>
-          </select>
-          <button className="primary" type="submit">Anlegen</button>
-        </form>
       </section>
     </main>
   );

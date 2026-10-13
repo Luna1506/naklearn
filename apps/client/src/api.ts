@@ -18,6 +18,10 @@ export interface WorkerStatus {
   state: 'idle' | 'running' | 'paused'; pauseReason: string | null; pausedUntil: number | null;
   current: { jobId: string; deckId: string; kind: Job['kind'] } | null; queued: number;
 }
+export interface Me { id: string; name: string; isAdmin: boolean }
+export interface ModuleListItem { id: string; name: string; language: Language; memberCount: number; mine: boolean }
+export interface DeviceInfo { id: string; name: string; createdAt: number; lastSeenAt: number | null }
+export interface Person extends Me { createdAt: number; lastSeenAt: number | null; moduleCount: number; deviceCount: number }
 export type DeckWithCount = Deck & { noteCount: number };
 export type NoteListItem = Note & { deckTitle: string; cards: Card[] };
 
@@ -35,7 +39,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
-  if (res.status === 401 && url !== '/api/login') {
+  if (res.status === 401 && url !== '/api/login' && !url.startsWith('/api/invites/')) {
     for (const fn of unauthorizedHandlers) fn();
     throw new Unauthorized(body?.error ?? 'Nicht angemeldet');
   }
@@ -57,14 +61,26 @@ function qs(params: Record<string, string | undefined>): string {
 }
 
 export const api = {
-  login: (password: string) => request<{ ok: true }>('/api/login', json('POST', { password })),
+  login: (name: string, password: string) => request<Me>('/api/login', json('POST', { name, password })),
+  me: () => request<Me>('/api/me'),
+  changePassword: (old: string, next: string) => request<{ ok: true }>('/api/me/password', json('POST', { old, new: next })),
+  devices: () => request<DeviceInfo[]>('/api/me/devices'),
+  removeDevice: (id: string) => request<{ ok: true }>(`/api/me/devices/${id}`, { method: 'DELETE' }),
+  allModules: () => request<ModuleListItem[]>('/api/modules/all'),
+  joinModule: (id: string) => request<{ ok: true }>(`/api/modules/${id}/join`, { method: 'POST' }),
+  leaveModule: (id: string) => request<{ ok: true }>(`/api/modules/${id}/leave`, { method: 'POST' }),
+  invite: () => request<{ url: string }>('/api/invites', { method: 'POST' }),
+  inviteInfo: (token: string) => request<{ kind: 'invite' | 'reset'; name: string | null }>(`/api/invites/${token}`),
+  acceptInvite: (token: string, body: { name?: string; password: string }) =>
+    request<Me>(`/api/invites/${token}/accept`, json('POST', body)),
+  people: () => request<Person[]>('/api/users'),
+  resetLink: (id: string) => request<{ url: string }>(`/api/users/${id}/reset`, { method: 'POST' }),
+  deletePerson: (id: string) => request<{ ok: true }>(`/api/users/${id}`, { method: 'DELETE' }),
   logout: () => request<{ ok: true }>('/api/logout', { method: 'POST' }),
-  rotateToken: () => request<{ ok: true }>('/api/pair/rotate', { method: 'POST' }),
   overview: () => request<Overview>('/api/overview'),
-  pair: () => request<{ url: string | null; token: string; payload: string | null; qrSvg: string | null }>('/api/pair'),
   createModule: (m: { name: string; language: Language; examDate?: string | null; newPerDay?: number }) =>
     request<Module>('/api/modules', json('POST', m)),
-  module: (id: string) => request<{ module: Module; decks: DeckWithCount[] }>(`/api/modules/${id}`),
+  module: (id: string) => request<{ module: Module; decks: DeckWithCount[]; mine: boolean; memberCount: number }>(`/api/modules/${id}`),
   updateModule: (id: string, patch: Partial<Pick<Module, 'name' | 'language' | 'examDate' | 'newPerDay'>>) =>
     request<Module>(`/api/modules/${id}`, json('PATCH', patch)),
   deleteModule: (id: string) => request<{ ok: true }>(`/api/modules/${id}`, { method: 'DELETE' }),

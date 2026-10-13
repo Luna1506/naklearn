@@ -36,9 +36,34 @@ describe('Anmeldung', () => {
     vi.stubGlobal('fetch', fetchMock);
     const seen = vi.fn();
     const off = onUnauthorized(seen);
-    await expect(api.login('x')).rejects.toThrow('Falsches Passwort');
+    await expect(api.login('Luna', 'x')).rejects.toThrow('Falsches Passwort');
     expect(seen).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledWith('/api/login', expect.objectContaining({ method: 'POST', body: JSON.stringify({ password: 'x' }) }));
+    expect(fetchMock).toHaveBeenCalledWith('/api/login', expect.objectContaining({ method: 'POST', body: JSON.stringify({ name: 'Luna', password: 'x' }) }));
     off();
+  });
+});
+
+describe('Konten-API', () => {
+  it('Login schickt Name und Passwort; Einladungs-401 löst keine Login-Seite aus', async () => {
+    const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(url.startsWith('/api/invites') ? { error: 'x' } : { id: '1', name: 'Luna', isAdmin: true }), { status: url.startsWith('/api/invites') ? 401 : 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const seen = vi.fn();
+    const off = onUnauthorized(seen);
+    await api.login('Luna', 'pw');
+    expect(fetchMock).toHaveBeenCalledWith('/api/login', expect.objectContaining({ body: JSON.stringify({ name: 'Luna', password: 'pw' }) }));
+    await expect(api.inviteInfo('tok')).rejects.toThrow();
+    expect(seen).not.toHaveBeenCalled();
+    off();
+  });
+  it('Modulauswahl und Personen', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ ok: true })));
+    vi.stubGlobal('fetch', fetchMock);
+    await api.joinModule('m1');
+    await api.leaveModule('m1');
+    await api.resetLink('u2');
+    await api.deletePerson('u2');
+    expect(fetchMock.mock.calls.map(([u, i]) => `${i?.method ?? 'GET'} ${u}`)).toEqual([
+      'POST /api/modules/m1/join', 'POST /api/modules/m1/leave', 'POST /api/users/u2/reset', 'DELETE /api/users/u2',
+    ]);
   });
 });
