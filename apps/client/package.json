@@ -13,17 +13,16 @@
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^8.1.1",
-    "@capacitor-mlkit/barcode-scanning": "^8.2.1",
     "@capacitor/android": "^8.5.2",
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.5.2",
     "@capacitor/file-transfer": "^2.0.6",
     "@capacitor/filesystem": "^8.1.4",
     "@naklearn/core": "*",
+    "@naklearn/store": "*",
     "@naklearn/ui": "*",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "@naklearn/store": "*"
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",

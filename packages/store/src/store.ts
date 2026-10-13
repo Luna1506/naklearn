@@ -52,6 +52,23 @@ export class LocalStore {
     return r[0]?.value ?? null;
   }
 
+  /** Alles Lokale löschen (Abmelden/Kontowechsel); die Geräte-ID bleibt. */
+  async wipe(): Promise<void> {
+    await this.db.transaction(async () => {
+      for (const t of ['revlog', 'card_state', 'card', 'note', 'slide', 'deck', 'module']) await this.db.run(`DELETE FROM ${t}`);
+      await this.db.run("DELETE FROM meta WHERE key NOT IN ('device_id', 'seq')");
+    });
+  }
+
+  /** Lokale Änderungen, die der Server noch nicht hat. */
+  async unsyncedCount(): Promise<number> {
+    let n = 0;
+    for (const t of ['revlog', 'note', 'card', 'module']) {
+      n += (await this.db.all<{ n: number }>(`SELECT COUNT(*) AS n FROM ${t} WHERE dirty = 1`))[0]!.n;
+    }
+    return n;
+  }
+
   async setMeta(key: string, value: string): Promise<void> {
     await this.db.run('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [key, value]);
   }

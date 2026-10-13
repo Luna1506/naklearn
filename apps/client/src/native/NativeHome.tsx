@@ -5,7 +5,7 @@ import type { SyncController, SyncState } from './controller.ts';
 
 export function syncLabel(s: SyncState, now = Date.now()): string {
   if (s.phase === 'syncing') return 'Synchronisiere …';
-  if (s.phase === 'unpaired') return 'Nicht gekoppelt – Einstellungen öffnen';
+  if (s.phase === 'unpaired') return s.message ?? 'Nicht angemeldet – Einstellungen öffnen';
   const ago = s.lastSync ? Math.round((now - s.lastSync) / 60_000) : null;
   const when = ago === null ? 'noch nie' : ago < 1 ? 'gerade eben' : ago < 60 ? `vor ${ago} min` : `vor ${Math.round(ago / 60)} h`;
   const base = `Zuletzt synchronisiert: ${when}`;

@@ -31,6 +31,9 @@ export async function createImageStore(): Promise<ImageStore> {
         },
       });
     },
+    async clear() {
+      await Filesystem.rmdir({ path: 'slides', directory: Directory.Data, recursive: true }).catch(() => {});
+    },
     src: (deckId, page) => Capacitor.convertFileSrc(`${base}/${rel(deckId, page)}`),
   };
 }

@@ -92,3 +92,19 @@ describe('LocalStore', () => {
     expect(n!.updated_at).toBeGreaterThan(NOW + 3_600_000);
   });
 });
+
+describe('wipe', () => {
+  it('löscht Inhalte und Lernstand, behält Geräte-ID', async () => {
+    const store = await LocalStore.open(nodeAdapter());
+    const id = store.deviceId;
+    await store.db.run("INSERT INTO module (id, name, language, updated_at) VALUES ('m', 'M', 'en', 1)");
+    await store.db.run("INSERT INTO revlog (id, card_id, rating, reviewed_at, duration_ms, device_id, dirty) VALUES ('r', 'c', 3, 1, 1, 'd', 1)");
+    await store.setMeta('token', 't');
+    expect(await store.unsyncedCount()).toBe(1);
+    await store.wipe();
+    expect(await store.db.all('SELECT * FROM module')).toEqual([]);
+    expect(await store.unsyncedCount()).toBe(0);
+    expect(await store.getMeta('token')).toBeNull();
+    expect(await store.getMeta('device_id')).toBe(id);
+  });
+});

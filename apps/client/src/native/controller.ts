@@ -1,12 +1,13 @@
 import type { Grade, Scope } from '@naklearn/core';
 import { syncStore, type LocalStore, type Transport } from '@naklearn/store';
 import type { StudyDataSource } from '@naklearn/ui';
-import { httpTransport } from './transport.ts';
+import { TokenRejected, deviceLogin, httpTransport } from './transport.ts';
 
 export interface ImageStore {
   has(deckId: string, page: number): Promise<boolean>;
   download(url: string, token: string, deckId: string, page: number, image: string): Promise<void>;
   src(deckId: string, page: number): string;
+  clear(): Promise<void>;
 }
 
 export interface SyncState {
@@ -21,13 +22,18 @@ export class SyncController {
   private store: LocalStore;
   private images: ImageStore;
   private makeTransport: (url: string, token: string) => Transport;
+  private loginImpl: typeof deviceLogin;
   private listeners = new Set<(s: SyncState) => void>();
   private running: Promise<void> | null = null;
 
-  constructor(store: LocalStore, images: ImageStore, makeTransport: (url: string, token: string) => Transport = httpTransport) {
+  constructor(
+    store: LocalStore, images: ImageStore,
+    makeTransport: (url: string, token: string) => Transport = httpTransport, loginImpl: typeof deviceLogin = deviceLogin,
+  ) {
     this.store = store;
     this.images = images;
     this.makeTransport = makeTransport;
+    this.loginImpl = loginImpl;
   }
 
   subscribe(fn: (s: SyncState) => void): () => void {
@@ -41,16 +47,37 @@ export class SyncController {
     for (const fn of this.listeners) fn(this.state);
   }
 
-  async pairing(): Promise<{ url: string; token: string } | null> {
+  async account(): Promise<{ url: string; token: string; name: string | null } | null> {
     const url = await this.store.getMeta('server_url');
     const token = await this.store.getMeta('token');
-    return url && token ? { url, token } : null;
+    return url && token ? { url, token, name: await this.store.getMeta('user_name') } : null;
   }
 
-  async pair(url: string, token: string): Promise<void> {
-    await this.store.setMeta('server_url', url.replace(/\/+$/, ''));
-    await this.store.setMeta('token', token);
+  /** Meldet das Handy an; bei anderer Person werden vorher die lokalen Daten gelöscht. Wirft bei Fehler. */
+  async login(url: string, name: string, password: string): Promise<void> {
+    const base = url.replace(/\/+$/, '');
+    const r = await this.loginImpl(base, name, password, 'Android-Handy');
+    const before = await this.store.getMeta('user_id');
+    if (before && before !== r.user.id) {
+      await this.store.wipe();
+      await this.images.clear();
+    }
+    await this.store.setMeta('server_url', base);
+    await this.store.setMeta('token', r.token);
+    await this.store.setMeta('user_id', r.user.id);
+    await this.store.setMeta('user_name', r.user.name);
     await this.sync();
+  }
+
+  /** Erst synchronisieren; gibt es danach noch Ungesynctes und `force` fehlt, nichts löschen. */
+  async logout(force = false): Promise<{ unsynced: number }> {
+    if (await this.account()) await this.sync();
+    const unsynced = await this.store.unsyncedCount();
+    if (unsynced > 0 && !force) return { unsynced };
+    await this.store.wipe();
+    await this.images.clear();
+    this.set({ phase: 'unpaired', message: null, lastSync: null, imagesMissing: 0 });
+    return { unsynced: 0 };
   }
 
   /** Synchronisiert und lädt fehlende Folienbilder; wirft nie, Fehler landen im Status. */
@@ -60,9 +87,9 @@ export class SyncController {
   }
 
   private async doSync(): Promise<void> {
-    const p = await this.pairing();
+    const p = await this.account();
     const last = await this.store.getMeta('last_sync');
-    if (!p) return this.set({ phase: 'unpaired', message: 'Noch nicht mit dem Server gekoppelt', lastSync: last ? Number(last) : null });
+    if (!p) return this.set({ phase: 'unpaired', message: 'Nicht angemeldet', lastSync: last ? Number(last) : null });
     this.set({ phase: 'syncing', message: null });
     try {
       await syncStore(this.store, this.makeTransport(p.url, p.token));
@@ -85,6 +112,10 @@ export class SyncController {
       const at = await this.store.getMeta('last_sync');
       this.set({ phase: 'idle', message: null, lastSync: at ? Number(at) : null, imagesMissing: missing });
     } catch (e) {
+      if (e instanceof TokenRejected) {
+        await this.store.setMeta('token', '');
+        return this.set({ phase: 'unpaired', message: e.message });
+      }
       this.set({ phase: 'error', message: String((e as Error).message ?? e) });
     }
   }

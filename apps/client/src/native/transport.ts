@@ -1,13 +1,25 @@
 import type { Transport } from '@naklearn/store';
 
-export function parsePairing(text: string): { url: string; token: string } | null {
-  try {
-    const j = JSON.parse(text);
-    if (typeof j?.url !== 'string' || typeof j?.token !== 'string' || !/^https?:\/\//.test(j.url) || !j.token) return null;
-    return { url: j.url.replace(/\/+$/, ''), token: j.token };
-  } catch {
-    return null;
+export const DEFAULT_SERVER = 'https://naklearn.torte-tech.de';
+
+/** Der Server kennt das Gerätetoken nicht (mehr) – neu anmelden. */
+export class TokenRejected extends Error {
+  constructor() {
+    super('Abgemeldet – bitte in den Einstellungen neu anmelden');
   }
+}
+
+export async function deviceLogin(
+  url: string, name: string, password: string, deviceName: string, fetchImpl: typeof fetch = fetch,
+): Promise<{ token: string; user: { id: string; name: string } }> {
+  const res = await fetchImpl(`${url.replace(/\/+$/, '')}/api/device/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, password, deviceName }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error ?? `Anmeldung fehlgeschlagen (HTTP ${res.status})`);
+  return body;
 }
 
 export function httpTransport(url: string, token: string, fetchImpl: typeof fetch = fetch, timeoutMs = 60_000): Transport {
@@ -25,7 +37,7 @@ export function httpTransport(url: string, token: string, fetchImpl: typeof fetc
         }),
         timeout,
       ]);
-      if (res.status === 401) throw new Error('Token ungültig – bitte neu koppeln');
+      if (res.status === 401) throw new TokenRejected();
       if (!res.ok) throw new Error(`Sync fehlgeschlagen (HTTP ${res.status})`);
       return await Promise.race([res.json(), timeout]);
     } finally {
