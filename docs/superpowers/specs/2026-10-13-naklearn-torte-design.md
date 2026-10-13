@@ -130,6 +130,10 @@ Pro Client-IP höchstens 5 Fehlversuche; danach 15 Minuten lang `429` auf
 `/api/login`. Zähler im Speicher (Map, abgelaufene Einträge werden beim Zugriff
 entfernt). Fastify `trustProxy: true`, damit `req.ip` die echte IP aus
 `X-Forwarded-For` ist (der Container ist nur über den Proxy erreichbar).
+**Nachtrag 2026-10-13:** Das Uni-WLAN (HY-WiFi) erreicht torte nicht direkt, deshalb läuft
+`naklearn.torte-tech.de` über den Cloudflare-Proxy (orange Wolke). Kommt die Anfrage laut
+Proxy von einer Cloudflare-Adresse, zählt für die Bremse `CF-Connecting-IP`; sonst wird
+der Header ignoriert (`apps/server/src/clientip.ts`). Uploads sind über Cloudflare auf 100 MB begrenzt.
 
 ### Koppeln
 - `GET /api/pair` (Sitzung nötig): `{url, token, payload, qrSvg}`, `url` aus

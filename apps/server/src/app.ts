@@ -15,6 +15,7 @@ import QRCode from 'qrcode';
 import {
   LoginLimiter, SESSION_COOKIE, clearSessionCookie, createSession, passwordMatches, readCookie, sessionCookie, verifySession,
 } from './auth.ts';
+import { clientIp } from './clientip.ts';
 import { rotateToken, type Config } from './config.ts';
 import { pairingPayload } from './pair.ts';
 import { SyncRequestSchema } from '@naklearn/core';
@@ -109,12 +110,13 @@ export function buildApp(deps: {
   app.post('/api/login', async (req, reply) => {
     const { password } = LoginInput.parse(req.body);
     const t = now();
-    if (limiter.blocked(req.ip, t)) return reply.code(429).send({ error: 'Zu viele Fehlversuche – bitte 15 Minuten warten.' });
+    const ip = clientIp(req.ip, req.headers['cf-connecting-ip']);
+    if (limiter.blocked(ip, t)) return reply.code(429).send({ error: 'Zu viele Fehlversuche – bitte 15 Minuten warten.' });
     if (!passwordMatches(password, cfg.password)) {
-      limiter.fail(req.ip, t);
+      limiter.fail(ip, t);
       return reply.code(401).send({ error: 'Falsches Passwort' });
     }
-    limiter.reset(req.ip);
+    limiter.reset(ip);
     reply.header('set-cookie', sessionCookie(createSession(sessionKey, t), req.protocol === 'https'));
     return { ok: true };
   });

@@ -213,6 +213,19 @@ describe('Anmeldung', () => {
     expect((await from('1.2.3.4, 9.9.9.9', 'pw')).statusCode).toBe(429);
   });
 
+  it('hinter Cloudflare zählt die echte Client-IP, gefälschter Header ohne Cloudflare zählt nicht', async () => {
+    const { raw } = await setup();
+    const via = (edge: string, client: string, password: string) =>
+      raw.inject({ method: 'POST', url: '/api/login', payload: { password }, remoteAddress: '172.18.0.2', headers: { 'x-forwarded-for': `${client}, ${edge}`, 'cf-connecting-ip': client } });
+    for (let i = 0; i < 5; i++) expect((await via('104.16.0.5', '9.9.9.9', 'falsch')).statusCode).toBe(401);
+    expect((await via('104.16.0.5', '9.9.9.9', 'pw')).statusCode).toBe(429);
+    // anderer Nutzer über denselben Cloudflare-Knoten ist nicht gesperrt
+    expect((await via('104.16.0.5', '8.8.8.8', 'pw')).statusCode).toBe(200);
+    // direkt (ohne Cloudflare) mit wechselndem Header: Sperre greift trotzdem
+    for (let i = 0; i < 5; i++) await via('5.5.5.5', `10.0.0.${i}`, 'falsch');
+    expect((await via('5.5.5.5', '10.0.0.99', 'pw')).statusCode).toBe(429);
+  });
+
   it('Logout löscht das Cookie, auch ohne gültige Sitzung', async () => {
     const { raw } = await setup();
     const r = await raw.inject({ method: 'POST', url: '/api/logout' });
