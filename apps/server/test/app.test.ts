@@ -21,7 +21,7 @@ async function setup(opts: { webDir?: boolean } = {}) {
   }
   const cfg: Config = {
     dataDir, port: 0, host: '127.0.0.1', token: 'secret', deviceId: 'laptop',
-    password: 'pw', sessionSecret: 'session-secret', publicUrl: 'https://naklearn.example',
+    password: 'pw', adminName: 'luna', sessionSecret: 'session-secret', publicUrl: 'https://naklearn.example',
     claudePath: '/bin/false', summaryModel: null, cardsModel: null, webDir,
   };
   const db = memDb();
@@ -285,16 +285,6 @@ describe('Anmeldung', () => {
     expect(r.json()).toMatchObject({ url: 'https://naklearn.example', token: 'secret' });
     expect(JSON.parse(r.json().payload)).toEqual({ v: 1, url: 'https://naklearn.example', token: 'secret' });
     expect(r.json().qrSvg).toContain('<svg');
-  });
-
-  it('Token neu erzeugen: nur mit Sitzung, altes Token danach ungültig', async () => {
-    const { raw, cfg } = await setup();
-    expect((await raw.inject({ method: 'POST', url: '/api/pair/rotate', headers: { authorization: 'Bearer secret' } })).statusCode).toBe(401);
-    const cookie = await login(raw);
-    expect((await raw.inject({ method: 'POST', url: '/api/pair/rotate', headers: { cookie } })).statusCode).toBe(200);
-    expect(cfg.token).not.toBe('secret');
-    expect((await raw.inject({ method: 'GET', url: '/api/overview', headers: { authorization: 'Bearer secret' } })).statusCode).toBe(401);
-    expect((await raw.inject({ method: 'GET', url: '/api/overview', headers: { authorization: `Bearer ${cfg.token}` } })).statusCode).toBe(200);
   });
 });
 

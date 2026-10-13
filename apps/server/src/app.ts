@@ -16,7 +16,7 @@ import {
   LoginLimiter, SESSION_COOKIE, clearSessionCookie, createSession, passwordMatches, readCookie, sessionCookie, verifySession,
 } from './auth.ts';
 import { clientIp } from './clientip.ts';
-import { rotateToken, type Config } from './config.ts';
+import type { Config } from './config.ts';
 import { pairingPayload } from './pair.ts';
 import { SyncRequestSchema } from '@naklearn/core';
 
@@ -71,7 +71,7 @@ export function buildApp(deps: {
   const app = Fastify({ logger: false, bodyLimit: 16 << 20, trustProxy: (_addr: string, hop: number) => hop === 0 });
   const limiter = new LoginLimiter();
   // Das Passwort fließt in den Schlüssel ein: ein neues Passwort beendet alle bestehenden Sitzungen.
-  const sessionKey = `${cfg.sessionSecret}\0${cfg.password}`;
+  const sessionKey = `${cfg.sessionSecret}\0${cfg.password ?? ''}`;
   const hasSession = (req: FastifyRequest) => verifySession(readCookie(req.headers.cookie, SESSION_COOKIE), sessionKey, now());
   const hasToken = (req: FastifyRequest) => req.headers.authorization === `Bearer ${cfg.token}`;
 
@@ -116,7 +116,7 @@ export function buildApp(deps: {
     const t = now();
     const ip = clientIp(req.ip, req.headers['cf-connecting-ip']);
     if (limiter.blocked(ip, t)) return reply.code(429).send({ error: 'Zu viele Fehlversuche – bitte 15 Minuten warten.' });
-    if (!passwordMatches(password, cfg.password)) {
+    if (!passwordMatches(password, cfg.password ?? '')) {
       limiter.fail(ip, t);
       return reply.code(401).send({ error: 'Falsches Passwort' });
     }
@@ -293,12 +293,6 @@ export function buildApp(deps: {
     const payload = url ? pairingPayload(url, cfg.token) : null;
     const qrSvg = payload ? await QRCode.toString(payload, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }) : null;
     return { url, token: cfg.token, payload, qrSvg };
-  });
-
-  app.post('/api/pair/rotate', async (req, reply) => {
-    if (!hasSession(req)) return reply.code(401).send({ error: 'unauthorized' });
-    rotateToken(cfg);
-    return { ok: true };
   });
 
   // ---- Sync ----

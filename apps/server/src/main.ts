@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { buildApp } from './app.ts';
 import { backupIfDue } from './backup.ts';
+import { bootstrapAccounts } from './bootstrap.ts';
 import { createClaudeRunner } from './claude.ts';
 import { loadConfig } from './config.ts';
 import { openDb } from './db.ts';
@@ -9,6 +10,11 @@ import { createWorker, resetRunningJobs } from './generation.ts';
 const cfg = loadConfig();
 const db = openDb(path.join(cfg.dataDir, 'naklearn.db'));
 resetRunningJobs(db);
+const boot = bootstrapAccounts(db, {
+  adminName: cfg.adminName, password: cfg.password, legacyToken: cfg.token,
+  backupDir: path.join(cfg.dataDir, 'backups'), now: Date.now(),
+});
+if (boot.created) console.log(`[naklearn] Konto „${cfg.adminName}“ angelegt${boot.backup ? ` (Sicherung: ${boot.backup})` : ''}`);
 
 const worker = createWorker({
   db,

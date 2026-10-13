@@ -16,8 +16,10 @@ export interface Config {
   host: string;
   token: string;
   deviceId: string;
-  /** Login-Passwort fürs Studio (Pflicht). */
-  password: string;
+  /** Nur für den Erststart: Passwort des Admin-Kontos. */
+  password: string | null;
+  /** Name des Admin-Kontos beim Erststart. */
+  adminName: string;
   /** Schlüssel für die Sitzungs-Cookies, bleibt über Neustarts gleich. */
   sessionSecret: string;
   /** Adresse, unter der die App den Server erreicht (für den QR-Code). */
@@ -40,9 +42,6 @@ function writeStored(dataDir: string, stored: Stored) {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const password = env.NAKLEARN_PASSWORD ?? '';
-  if (!password) throw new Error('NAKLEARN_PASSWORD ist nicht gesetzt – ohne Passwort startet der Server nicht.');
-
   const dataDir = path.resolve(env.NAKLEARN_DATA_DIR ?? path.join(os.homedir(), '.local/share/naklearn'));
   for (const d of ['', 'pdfs', 'slides', 'backups']) mkdirSync(path.join(dataDir, d), { recursive: true });
 
@@ -60,7 +59,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.NAKLEARN_HOST ?? '0.0.0.0',
     token: stored.token,
     deviceId: stored.deviceId,
-    password,
+    password: env.NAKLEARN_PASSWORD || null,
+    adminName: env.NAKLEARN_ADMIN?.trim() || 'luna',
     sessionSecret: stored.sessionSecret,
     publicUrl: env.NAKLEARN_PUBLIC_URL ? env.NAKLEARN_PUBLIC_URL.replace(/\/+$/, '') : null,
     claudePath: env.NAKLEARN_CLAUDE ?? path.join(os.homedir(), '.local/bin/claude'),
@@ -68,14 +68,4 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cardsModel: env.NAKLEARN_CARDS_MODEL || 'opus',
     webDir: env.NAKLEARN_WEB_DIR ?? defaultWebDir(),
   };
-}
-
-/** Neues App-Token; bereits gekoppelte Geräte müssen neu koppeln. */
-export function rotateToken(cfg: Config): string {
-  const file = configFile(cfg.dataDir);
-  const stored: Stored = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
-  stored.token = secret();
-  writeStored(cfg.dataDir, stored);
-  cfg.token = stored.token;
-  return stored.token;
 }
