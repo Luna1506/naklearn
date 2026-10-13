@@ -211,4 +211,12 @@ describe('Sicht der Person', () => {
     applyPush(db, U, { ...emptyPush(), modules: [{ ...mod, deleted: true, updatedAt: 9000 }] });
     expect(repo.getModule(db, mod.id)).toBeUndefined();
   });
+
+  it('Geräte-Push ändert nie gemeinsame Modulfelder (Umbenennung bleibt erhalten)', () => {
+    const { db, mod, U } = seeded();
+    repo.updateModule(db, mod.id, { name: 'Neu' }, 6000);
+    applyPush(db, U, { ...emptyPush(), modules: [{ ...mod, name: mod.name, examDate: '2026-12-01', updatedAt: 7000 }] });
+    expect(repo.getModule(db, mod.id)!.name).toBe('Neu');
+    expect(repo.getMyModule(db, U, mod.id)!.examDate).toBe('2026-12-01');
+  });
 });

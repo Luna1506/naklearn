@@ -62,11 +62,7 @@ export function applyPush(db: Db, userId: string, push: SyncPush): void {
         continue;
       }
       if (!mine) continue;
-      if (cur.deleted || m.updatedAt <= cur.updated_at) bump(db, 'module', m.id);
-      else {
-        db.prepare('UPDATE module SET name = ?, language = ?, updated_at = ?, seq = ? WHERE id = ?')
-          .run(m.name, m.language, m.updatedAt, nextSeq(db), m.id);
-      }
+      // Gemeinsame Felder (Name, Sprache) schreibt nie ein Gerät; nur die persönliche Mitgliedschaft (LWW).
       const ms = db.prepare('SELECT updated_at FROM membership WHERE user_id = ? AND module_id = ?').get(userId, m.id) as { updated_at: number };
       if (m.updatedAt > ms.updated_at) updateMembership(db, userId, m.id, { examDate: m.examDate, newPerDay: m.newPerDay }, m.updatedAt);
     }
