@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+result
+.devdata
+.git
+.github
+docs
+deploy
+apps/client/android
+*.apk

@@ -1,0 +1,20 @@
+# Liegt auf torte unter ~/naklearn/docker-compose.yml (Secrets in ~/naklearn/.env, siehe env.example).
+services:
+  naklearn:
+    image: luna1506/naklearn:latest
+    container_name: naklearn
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NAKLEARN_PUBLIC_URL: https://naklearn.torte-tech.de
+    volumes:
+      - naklearn_data:/data
+    networks:
+      - proxy
+
+volumes:
+  naklearn_data:
+
+networks:
+  proxy:
+    external: true
