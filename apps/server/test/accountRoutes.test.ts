@@ -85,6 +85,25 @@ describe('App-Login und Geräte', () => {
     expect((await app.inject({ method: 'DELETE', url: `/api/me/devices/${devices[0].id}`, headers: auth })).statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: '/api/me', headers: auth })).statusCode).toBe(401);
   });
+  it('App-Login funktioniert mit fremder Origin (Capacitor WebView)', async () => {
+    const { app } = setup();
+    const r = await app.inject({
+      method: 'POST',
+      url: '/api/device/login',
+      headers: { origin: 'https://localhost', host: 'naklearn.example' },
+      payload: { name: 'mia', password: 'mia-pass-1', deviceName: 'Pixel' },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toHaveProperty('token');
+    // Browser-Login muss weiterhin gegen CSRF geschützt sein
+    const browserLogin = await app.inject({
+      method: 'POST',
+      url: '/api/login',
+      headers: { origin: 'https://localhost', host: 'naklearn.example' },
+      payload: { name: 'mia', password: 'mia-pass-1' },
+    });
+    expect(browserLogin.statusCode).toBe(403);
+  });
   it('fremde Geräte lassen sich nicht entfernen', async () => {
     const { app, db, luna, mia } = setup();
     const { device } = addDevice(db, luna.id, 'Lunas Handy', 0);

@@ -84,13 +84,14 @@ export function buildApp(deps: {
     const device = deviceAuth(req);
     // Schreibende Browser-Requests von fremden Webseiten (CSRF) ablehnen; die App schickt ein Token, das keine fremde Seite kennt.
     const origin = req.headers.origin;
-    if (!device && origin && req.method !== 'GET' && req.method !== 'HEAD') {
+    if (!device && origin && req.method !== 'GET' && req.method !== 'HEAD' && req.routeOptions.url !== '/api/device/login') {
       let sameOrigin = false;
       try {
         sameOrigin = new URL(origin).host === req.headers.host;
       } catch {}
       if (!sameOrigin) return reply.code(403).send({ error: 'forbidden origin' });
     }
+    // /api/device/login ist öffentlich und gibt kein Cookie; fremde Seite kann Antwort nicht lesen.
     req.auth = device ?? sessionAuth(req);
     const route = req.routeOptions.url;
     if (route !== undefined && (!route.startsWith('/api/') || PUBLIC_ROUTES.has(route))) return;
