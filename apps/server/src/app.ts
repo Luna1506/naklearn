@@ -79,6 +79,10 @@ export function buildApp(deps: {
   if (cfg.webDir) app.register(fastifyStatic, { root: cfg.webDir, prefix: '/' });
 
   app.addHook('onRequest', async (req, reply) => {
+    // Hinter dem Proxy per http aufgerufen → auf die öffentliche https-Adresse umleiten.
+    if (cfg.publicUrl?.startsWith('https://') && req.headers['x-forwarded-proto'] && req.protocol === 'http') {
+      return reply.redirect(cfg.publicUrl + req.url, 301);
+    }
     const bearer = hasToken(req);
     // Schreibende Browser-Requests von fremden Webseiten (CSRF) ablehnen; die App schickt ein Token, das keine fremde Seite kennt.
     const origin = req.headers.origin;

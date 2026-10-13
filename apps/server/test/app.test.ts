@@ -226,6 +226,15 @@ describe('Anmeldung', () => {
     expect((await via('5.5.5.5', '10.0.0.99', 'pw')).statusCode).toBe(429);
   });
 
+  it('leitet HTTP hinter dem Proxy auf die HTTPS-Adresse um', async () => {
+    const { raw } = await setup({ webDir: true });
+    const r = await raw.inject({ method: 'GET', url: '/api/health?x=1', headers: { 'x-forwarded-proto': 'http' } });
+    expect(r.statusCode).toBe(301);
+    expect(r.headers.location).toBe('https://naklearn.example/api/health?x=1');
+    expect((await raw.inject({ method: 'GET', url: '/', headers: { 'x-forwarded-proto': 'https' } })).statusCode).toBe(200);
+    expect((await raw.inject({ method: 'GET', url: '/' })).statusCode).toBe(200);
+  });
+
   it('Logout löscht das Cookie, auch ohne gültige Sitzung', async () => {
     const { raw } = await setup();
     const r = await raw.inject({ method: 'POST', url: '/api/logout' });
