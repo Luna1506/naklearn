@@ -1,29 +1,23 @@
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z, ZodError } from 'zod';
-import type { Config } from './config.ts';
 import type { Db } from './db.ts';
 import { enqueueDeck, listJobs, regenerateDeck, retryJob, type Worker } from './generation.ts';
 import * as repo from './repo.ts';
 import { answer, getNext, getOverview, undo } from './study.ts';
 import { applyPush, pullSince } from './sync.ts';
 import QRCode from 'qrcode';
+import {
+  LoginLimiter, SESSION_COOKIE, clearSessionCookie, createSession, passwordMatches, readCookie, sessionCookie, verifySession,
+} from './auth.ts';
+import { rotateToken, type Config } from './config.ts';
 import { pairingPayload } from './pair.ts';
 import { SyncRequestSchema } from '@naklearn/core';
-
-const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
-
-function hostName(host: string | undefined): string {
-  if (!host) return '';
-  if (host.startsWith('[')) return host.slice(0, host.indexOf(']') + 1);
-  return host.split(':')[0]!.toLowerCase();
-}
 
 class NotFound extends Error {}
 
@@ -54,6 +48,10 @@ const AnswerInput = z.object({
   durationMs: z.number().min(0).max(3_600_000),
 });
 
+const LoginInput = z.object({ password: z.string().max(1000) });
+/** Ohne Anmeldung erreichbar (alles außerhalb von /api ist der Web-Client). */
+const PUBLIC_ROUTES = new Set(['/api/login', '/api/logout', '/api/health']);
+
 function must<T>(v: T | undefined, what: string): T {
   if (v === undefined) throw new NotFound(`${what} nicht gefunden`);
   return v;
@@ -64,29 +62,33 @@ export function buildApp(deps: {
   cfg: Config;
   worker: Pick<Worker, 'wake' | 'status' | 'resume'>;
   now?: () => number;
-  /** Ermittelt die Adresse fürs Handy (Standard: Tailscale). */
-  publicUrl?: () => Promise<string | null>;
 }): FastifyInstance {
   const { db, cfg, worker } = deps;
   const now = deps.now ?? Date.now;
-  const app = Fastify({ logger: false, bodyLimit: 16 << 20 });
+  // Genau ein Proxy (Nginx Proxy Manager) davor, der Container ist direkt nicht erreichbar:
+  // nur dem direkten Gegenüber vertrauen, req.ip ist dann die vom Proxy angehängte Client-Adresse.
+  const app = Fastify({ logger: false, bodyLimit: 16 << 20, trustProxy: (_addr: string, hop: number) => hop === 0 });
+  const limiter = new LoginLimiter();
+  const hasSession = (req: FastifyRequest) => verifySession(readCookie(req.headers.cookie, SESSION_COOKIE), cfg.sessionSecret, now());
+  const hasToken = (req: FastifyRequest) => req.headers.authorization === `Bearer ${cfg.token}`;
 
   app.register(multipart, { limits: { fileSize: 300 * 1024 * 1024, files: 50 } });
   if (cfg.webDir) app.register(fastifyStatic, { root: cfg.webDir, prefix: '/' });
 
   app.addHook('onRequest', async (req, reply) => {
-    // Schreibende Requests von fremden Webseiten (CSRF) ablehnen.
+    const bearer = hasToken(req);
+    // Schreibende Browser-Requests von fremden Webseiten (CSRF) ablehnen; die App schickt ein Token, das keine fremde Seite kennt.
     const origin = req.headers.origin;
-    if (origin && req.method !== 'GET' && req.method !== 'HEAD') {
+    if (!bearer && origin && req.method !== 'GET' && req.method !== 'HEAD') {
       let sameOrigin = false;
       try {
         sameOrigin = new URL(origin).host === req.headers.host;
       } catch {}
       if (!sameOrigin) return reply.code(403).send({ error: 'forbidden origin' });
     }
-    // Ohne Token nur echte lokale Aufrufe – der Host-Header schützt vor DNS-Rebinding.
-    if (LOOPBACK.has(req.socket.remoteAddress ?? '') && LOCAL_HOSTS.has(hostName(req.headers.host))) return;
-    if (req.headers.authorization === `Bearer ${cfg.token}`) return;
+    const route = req.routeOptions.url;
+    if (route !== undefined && (!route.startsWith('/api/') || PUBLIC_ROUTES.has(route))) return;
+    if (bearer || hasSession(req)) return;
     return reply.code(401).send({ error: 'unauthorized' });
   });
 
@@ -97,6 +99,27 @@ export function buildApp(deps: {
     if (e.statusCode && e.statusCode < 500) return reply.code(e.statusCode).send({ error: e.message });
     console.error(err);
     return reply.code(500).send({ error: String(e.message ?? err) });
+  });
+
+  // ---- Anmeldung ----
+  app.get('/api/health', async () => ({ ok: true }));
+
+  app.post('/api/login', async (req, reply) => {
+    const { password } = LoginInput.parse(req.body);
+    const t = now();
+    if (limiter.blocked(req.ip, t)) return reply.code(429).send({ error: 'Zu viele Fehlversuche – bitte 15 Minuten warten.' });
+    if (!passwordMatches(password, cfg.password)) {
+      limiter.fail(req.ip, t);
+      return reply.code(401).send({ error: 'Falsches Passwort' });
+    }
+    limiter.reset(req.ip);
+    reply.header('set-cookie', sessionCookie(createSession(cfg.sessionSecret, t), req.protocol === 'https'));
+    return { ok: true };
+  });
+
+  app.post('/api/logout', async (req, reply) => {
+    reply.header('set-cookie', clearSessionCookie(req.protocol === 'https'));
+    return { ok: true };
   });
 
   // ---- Übersicht und Module ----
@@ -255,13 +278,19 @@ export function buildApp(deps: {
     return { ok: true };
   });
 
-  // ---- Koppeln ----
+  // ---- Koppeln (nur im eingeloggten Studio, nicht per App-Token) ----
   app.get('/api/pair', async (req, reply) => {
-    if (!LOOPBACK.has(req.socket.remoteAddress ?? '')) return reply.code(403).send({ error: 'Koppeln nur am Laptop' });
+    if (!hasSession(req)) return reply.code(401).send({ error: 'unauthorized' });
     const url = cfg.publicUrl;
     const payload = url ? pairingPayload(url, cfg.token) : null;
     const qrSvg = payload ? await QRCode.toString(payload, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }) : null;
     return { url, token: cfg.token, payload, qrSvg };
+  });
+
+  app.post('/api/pair/rotate', async (req, reply) => {
+    if (!hasSession(req)) return reply.code(401).send({ error: 'unauthorized' });
+    rotateToken(cfg);
+    return { ok: true };
   });
 
   // ---- Sync ----
