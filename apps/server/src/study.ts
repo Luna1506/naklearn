@@ -50,7 +50,7 @@ export function answer(
 export function undo(db: Db, userId: string, revlogId: string, deviceId: string, now: number): void {
   const target = repo.getRevlog(db, revlogId);
   if (!target || target.revokes !== null || repo.revlogOwner(db, revlogId) !== userId) throw new Error('Bewertung nicht gefunden');
-  const already = db.prepare('SELECT 1 FROM revlog WHERE revokes = ?').get(revlogId);
+  const already = db.prepare('SELECT 1 FROM revlog WHERE revokes = ? AND user_id = ?').get(revlogId, userId);
   if (already) throw new Error('Bewertung wurde bereits zurückgenommen');
   tx(db, () => {
     repo.insertRevlog(db, { id: newId(), cardId: target.cardId, rating: 0, reviewedAt: now, durationMs: 0, deviceId, revokes: revlogId }, userId);

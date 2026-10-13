@@ -1,6 +1,8 @@
+import { emptyPush } from '@naklearn/core';
 import { describe, expect, it } from 'vitest';
 import * as repo from '../src/repo.ts';
 import { answer, getNext, getOverview, undo } from '../src/study.ts';
+import { applyPush } from '../src/sync.ts';
 import { addUser, memDb } from './helpers.ts';
 
 const NOW = new Date('2026-10-21T10:00:00+09:00').getTime();
@@ -33,6 +35,16 @@ describe('persönlicher Lernstand', () => {
     const { db, luna, mia, cardId } = setup();
     const { revlogId } = answer(db, { userId: luna, cardId, rating: 3, durationMs: 1, deviceId: 'web', now: NOW });
     expect(() => undo(db, mia, revlogId, 'web', NOW)).toThrow(/nicht gefunden/);
+    undo(db, luna, revlogId, 'web', NOW);
+  });
+
+  it('fremde Bewertung lässt sich auch nicht per Sync-Push zurücknehmen', () => {
+    const { db, luna, mia, cardId } = setup();
+    const { revlogId } = answer(db, { userId: luna, cardId, rating: 3, durationMs: 1, deviceId: 'web', now: NOW });
+    const e = { id: 'x', cardId, rating: 0 as const, reviewedAt: NOW, durationMs: 0, deviceId: 'mia-phone', revokes: revlogId };
+    applyPush(db, mia, { ...emptyPush(), revlog: [e] });
+    expect(repo.revlogOwner(db, 'x')).toBeNull();
+    expect(getOverview(db, luna, NOW).studiedToday).toBe(1);
     undo(db, luna, revlogId, 'web', NOW);
   });
 

@@ -3,7 +3,7 @@ import {
   type SyncPull, type SyncPush, type SyncResponse,
 } from '@naklearn/core';
 import { tx, type Db } from './db.ts';
-import { getMyModule, insertRevlog, nextSeq, updateMembership } from './repo.ts';
+import { getMyModule, insertRevlog, nextSeq, revlogOwner, updateMembership } from './repo.ts';
 import { recomputeCard } from './study.ts';
 
 type Row = Record<string, any>;
@@ -89,6 +89,8 @@ export function applyPush(db: Db, userId: string, push: SyncPush): void {
     for (const id of touchedNotes) reconcileCards(db, id);
     const touched = new Set<string>();
     for (const r of push.revlog) {
+      // Nur eigene Bewertungen lassen sich zurücknehmen.
+      if (r.revokes !== null && revlogOwner(db, r.revokes) !== userId) continue;
       insertRevlog(db, r, userId);
       touched.add(r.cardId);
     }

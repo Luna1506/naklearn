@@ -401,6 +401,6 @@ export function studyRows(db: Db, userId: string): QueueCard[] {
 export function allReviewTimes(db: Db, userId: string): number[] {
   return (db.prepare(
     `SELECT reviewed_at FROM revlog r WHERE r.user_id = ? AND rating >= 1
-     AND NOT EXISTS (SELECT 1 FROM revlog u WHERE u.revokes = r.id)`,
+     AND NOT EXISTS (SELECT 1 FROM revlog u WHERE u.revokes = r.id AND u.user_id = r.user_id)`,
   ).all(userId) as Row[]).map((r) => r.reviewed_at);
 }
