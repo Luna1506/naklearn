@@ -306,7 +306,7 @@ export function buildApp(deps: {
   app.post('/api/sync', async (req) => {
     const body = SyncRequestSchema.parse(req.body);
     applyPush(db, me(req).id, body.push);
-    return pullSince(db, body.cursor);
+    return pullSince(db, me(req).id, body.cursor);
   });
 
   // ---- Folienbilder ----

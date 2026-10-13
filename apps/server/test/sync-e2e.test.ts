@@ -119,7 +119,7 @@ describe('Sync Handy ↔ Laptop', () => {
     await phone.updateModule(mod.id, { examDate: '2026-10-30' });
     await syncStore(phone, transport);
     expect(repo.getNote(db, c.noteId)!.front).toBe('Neu vom Handy');
-    expect(repo.getCard(db, c.cardId)!.suspended).toBe(true);
+    expect(repo.studyRows(db, owner.id).find((r) => r.cardId === c.cardId)!.suspended).toBe(true);
     expect(repo.getMyModule(db, owner.id, mod.id)!.examDate).toBe('2026-10-30');
     const [dirtyNotes] = await phone.db.all<{ n: number }>('SELECT COUNT(*) AS n FROM note WHERE dirty = 1');
     expect(dirtyNotes!.n).toBe(0);
@@ -152,7 +152,7 @@ describe('Sync Handy ↔ Laptop', () => {
     repo.updateDeck(db, deck.id, { status: 'ready' }, NOW); // Deck bekommt eine höhere seq als seine Notes
     const paged = async (req: SyncRequest): Promise<SyncResponse> => {
       applyPush(db, owner.id, req.push);
-      return pullSince(db, req.cursor, 2);
+      return pullSince(db, owner.id, req.cursor, 2);
     };
     await syncStore(phone, paged);
     expect((await phone.overview()).modules[0]).toMatchObject({ total: 3 });
@@ -187,5 +187,45 @@ describe('Sync Handy ↔ Laptop', () => {
     await syncStore(phone, transport);
     expect((await phone.overview()).modules[0]!.total).toBe(0);
     expect(await phone.listSlides()).toHaveLength(0);
+  });
+});
+
+describe('zwei Personen, zwei Handys', () => {
+  it('lernen dasselbe Modul offline, jede behält ihren Stand, Karteninhalte sind gemeinsam', async () => {
+    const db = memDb();
+    const cfg = { dataDir: '/tmp', port: 0, host: '127.0.0.1', token: 't', deviceId: 'server', password: null, adminName: 'luna', sessionSecret: 's', publicUrl: null, claudePath: '', summaryModel: null, cardsModel: null, webDir: null };
+    const worker = { wake() {}, resume() {}, status: () => ({ state: 'idle' as const, pauseReason: null, pausedUntil: null, current: null, queued: 0 }) };
+    const app = buildApp({ db, cfg, worker, now: () => NOW });
+    const luna = createUser(db, { name: 'luna', password: 'pw-luna-123', isAdmin: true, now: NOW });
+    const mia = createUser(db, { name: 'mia', password: 'pw-mia-1234', now: NOW });
+    const mod = repo.createModule(db, { name: 'Cloud', language: 'en', createdBy: luna.id }, NOW - 60_000);
+    repo.joinModule(db, mia.id, mod.id, NOW - 60_000);
+    const deck = repo.createDeck(db, { moduleId: mod.id, title: 'D', pdfSha256: 's' }, NOW - 60_000);
+    for (let i = 0; i < 2; i++) {
+      repo.insertNote(db, { deckId: deck.id, kind: 'qa', front: `Q${i}`, back: 'A', slideRefs: [1], frontImagePage: null, tags: [], source: 'chunk', position: i }, NOW - 60_000);
+    }
+    const phoneOf = async (userId: string) => {
+      const { token } = addDevice(db, userId, 'Handy', NOW);
+      const transport = async (req: SyncRequest): Promise<SyncResponse> => {
+        const r = await app.inject({ method: 'POST', url: '/api/sync', payload: req, headers: { authorization: `Bearer ${token}` } });
+        if (r.statusCode !== 200) throw new Error(r.body);
+        return r.json();
+      };
+      return { store: await LocalStore.open(nodeAdapter(), { now: () => NOW }), transport };
+    };
+    const a = await phoneOf(luna.id);
+    const b = await phoneOf(mia.id);
+    await syncStore(a.store, a.transport);
+    await syncStore(b.store, b.transport);
+    const card = (await a.store.next({})).card!;
+    await a.store.answer(card.cardId, 4, 1000);
+    await a.store.updateNote(card.noteId, { front: 'Q0 verbessert', back: 'A' });
+    await syncStore(a.store, a.transport);
+    await syncStore(b.store, b.transport);
+    expect((await a.store.next({})).counts.new).toBe(1);
+    expect((await b.store.next({})).counts.new).toBe(2);
+    const [note] = await b.store.db.all<{ front: string }>('SELECT front FROM note WHERE id = ?', [card.noteId]);
+    expect(note!.front).toBe('Q0 verbessert');
+    expect(await b.store.db.all('SELECT * FROM revlog')).toEqual([]);
   });
 });

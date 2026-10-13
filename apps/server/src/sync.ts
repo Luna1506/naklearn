@@ -3,7 +3,9 @@ import {
   type SyncPull, type SyncPush, type SyncResponse,
 } from '@naklearn/core';
 import { tx, type Db } from './db.ts';
-import { getMyModule, insertRevlog, nextSeq, revlogOwner, updateMembership } from './repo.ts';
+import {
+  deleteModule, getMyModule, insertRevlog, leaveModule, memberIds, nextSeq, revlogOwner, setCardFlag, updateMembership,
+} from './repo.ts';
 import { recomputeCard } from './study.ts';
 
 type Row = Record<string, any>;
@@ -52,13 +54,21 @@ export function applyPush(db: Db, userId: string, push: SyncPush): void {
     for (const m of push.modules) {
       const cur = current(db, 'module', m.id);
       if (!cur) continue;
-      if ((cur.deleted && !m.deleted) || m.updatedAt <= cur.updated_at) {
-        bump(db, 'module', m.id);
+      const mine = !!getMyModule(db, userId, m.id);
+      if (m.deleted) {
+        // Löschen auf dem Gerät = aus meinen Modulen entfernen; gemeinsam gelöscht nur ohne weitere Mitglieder.
+        if (mine) leaveModule(db, userId, m.id);
+        if (!cur.deleted && memberIds(db, m.id).length === 0) deleteModule(db, m.id, Math.max(m.updatedAt, cur.updated_at + 1));
         continue;
       }
-      db.prepare('UPDATE module SET name = ?, language = ?, deleted = ?, updated_at = ?, seq = ? WHERE id = ?')
-        .run(m.name, m.language, m.deleted ? 1 : 0, m.updatedAt, nextSeq(db), m.id);
-      if (getMyModule(db, userId, m.id)) updateMembership(db, userId, m.id, { examDate: m.examDate, newPerDay: m.newPerDay }, m.updatedAt);
+      if (!mine) continue;
+      if (cur.deleted || m.updatedAt <= cur.updated_at) bump(db, 'module', m.id);
+      else {
+        db.prepare('UPDATE module SET name = ?, language = ?, updated_at = ?, seq = ? WHERE id = ?')
+          .run(m.name, m.language, m.updatedAt, nextSeq(db), m.id);
+      }
+      const ms = db.prepare('SELECT updated_at FROM membership WHERE user_id = ? AND module_id = ?').get(userId, m.id) as { updated_at: number };
+      if (m.updatedAt > ms.updated_at) updateMembership(db, userId, m.id, { examDate: m.examDate, newPerDay: m.newPerDay }, m.updatedAt);
     }
     for (const n of push.notes) {
       const cur = current(db, 'note', n.id);
@@ -76,15 +86,17 @@ export function applyPush(db: Db, userId: string, push: SyncPush): void {
       if (cur) {
         if (c.updatedAt <= cur.updated_at) bump(db, 'card', c.id);
         else {
-          db.prepare('UPDATE card SET suspended = ?, deleted = ?, updated_at = ?, seq = ? WHERE id = ?')
-            .run(c.suspended ? 1 : 0, c.deleted ? 1 : 0, c.updatedAt, nextSeq(db), c.id);
+          db.prepare('UPDATE card SET deleted = ?, updated_at = ?, seq = ? WHERE id = ?').run(c.deleted ? 1 : 0, c.updatedAt, nextSeq(db), c.id);
         }
         touchedNotes.add(c.noteId);
       } else if (db.prepare('SELECT 1 FROM note WHERE id = ?').get(c.noteId)) {
-        db.prepare('INSERT INTO card (id, note_id, ordinal, suspended, deleted, updated_at, seq) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .run(c.id, c.noteId, c.ordinal, c.suspended ? 1 : 0, c.deleted ? 1 : 0, c.updatedAt, nextSeq(db));
+        db.prepare('INSERT INTO card (id, note_id, ordinal, deleted, updated_at, seq) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(c.id, c.noteId, c.ordinal, c.deleted ? 1 : 0, c.updatedAt, nextSeq(db));
         touchedNotes.add(c.noteId);
-      }
+      } else continue;
+      // „Zurückgestellt“ ist persönlich (Last-Writer-Wins über card_flag.updated_at).
+      const f = db.prepare('SELECT suspended, updated_at FROM card_flag WHERE user_id = ? AND card_id = ?').get(userId, c.id) as { suspended: number; updated_at: number } | undefined;
+      if ((f ? c.updatedAt > f.updated_at : c.suspended) && (!f || !!f.suspended !== c.suspended)) setCardFlag(db, userId, c.id, c.suspended, c.updatedAt);
     }
     for (const id of touchedNotes) reconcileCards(db, id);
     const touched = new Set<string>();
@@ -98,22 +110,39 @@ export function applyPush(db: Db, userId: string, push: SyncPush): void {
   });
 }
 
-const TABLES = [
-  ['module', 'modules', toModule],
-  ['deck', 'decks', toDeck],
-  ['slide', 'slides', toSlideRow],
-  ['note', 'notes', toNote],
-  ['card', 'cards', toCard],
-  ['revlog', 'revlog', toRevlog],
-] as const;
+type Item = { seq: number; key: keyof SyncPull; row: unknown };
 
-/** Alle Zeilen mit seq > cursor, global nach seq sortiert, höchstens `limit` pro Antwort. */
-export function pullSince(db: Db, cursor: number, limit = SYNC_PAGE_SIZE): SyncResponse {
-  const items: { seq: number; key: keyof SyncPull; row: unknown }[] = [];
-  for (const [table, key, map] of TABLES) {
-    const rows = db.prepare(`SELECT * FROM ${table} WHERE seq > ? ORDER BY seq LIMIT ?`).all(cursor, limit + 1) as Row[];
+/** Zeilen mit seq > cursor aus Sicht der Person, global nach seq sortiert, höchstens `limit` pro Antwort. */
+export function pullSince(db: Db, userId: string, cursor: number, limit = SYNC_PAGE_SIZE): SyncResponse {
+  const n = limit + 1;
+  const items: Item[] = [];
+  const add = (key: keyof SyncPull, rows: Row[], map: (r: Row) => unknown) => {
     for (const r of rows) items.push({ seq: r.seq, key, row: map(r) });
-  }
+  };
+  const MINE = 'IN (SELECT module_id FROM membership WHERE user_id = ?)';
+  add('modules', db.prepare(
+    `SELECT m.*, ms.exam_date AS ms_exam_date, ms.new_per_day AS ms_new_per_day, ms.updated_at AS ms_updated_at
+     FROM module m LEFT JOIN membership ms ON ms.module_id = m.id AND ms.user_id = ?
+     WHERE m.seq > ? ORDER BY m.seq LIMIT ?`,
+  ).all(userId, cursor, n) as Row[], (r) => (r.ms_updated_at == null
+    ? { ...toModule(r), deleted: true }
+    : { ...toModule(r), examDate: r.ms_exam_date ?? null, newPerDay: r.ms_new_per_day, updatedAt: Math.max(r.updated_at, r.ms_updated_at) }));
+  add('decks', db.prepare(`SELECT * FROM deck WHERE module_id ${MINE} AND seq > ? ORDER BY seq LIMIT ?`).all(userId, cursor, n) as Row[], toDeck);
+  add('slides', db.prepare(
+    `SELECT s.* FROM slide s JOIN deck d ON d.id = s.deck_id WHERE d.module_id ${MINE} AND s.seq > ? ORDER BY s.seq LIMIT ?`,
+  ).all(userId, cursor, n) as Row[], toSlideRow);
+  add('notes', db.prepare(
+    `SELECT n.* FROM note n JOIN deck d ON d.id = n.deck_id WHERE d.module_id ${MINE} AND n.seq > ? ORDER BY n.seq LIMIT ?`,
+  ).all(userId, cursor, n) as Row[], toNote);
+  add('cards', db.prepare(
+    `SELECT c.*, f.suspended AS f_suspended, f.updated_at AS f_updated_at FROM card c
+     JOIN note n ON n.id = c.note_id JOIN deck d ON d.id = n.deck_id
+     LEFT JOIN card_flag f ON f.card_id = c.id AND f.user_id = ?
+     WHERE d.module_id ${MINE} AND c.seq > ? ORDER BY c.seq LIMIT ?`,
+  ).all(userId, userId, cursor, n) as Row[], (r) => ({
+    ...toCard(r), suspended: !!r.f_suspended, updatedAt: Math.max(r.updated_at, r.f_updated_at ?? 0),
+  }));
+  add('revlog', db.prepare('SELECT * FROM revlog WHERE user_id = ? AND seq > ? ORDER BY seq LIMIT ?').all(userId, cursor, n) as Row[], toRevlog);
   items.sort((a, b) => a.seq - b.seq);
   const page = items.slice(0, limit);
   const pull: SyncPull = { modules: [], decks: [], slides: [], notes: [], cards: [], revlog: [] };
