@@ -49,10 +49,10 @@ export function NativeSettings({ store, sync, state }: { store: LocalStore; sync
       </header>
       <p className={`sync-status ${state.phase}`}>{syncLabel(state)}</p>
       <section className="card-form">
-        <h2>Mit dem Laptop koppeln</h2>
-        <p className="muted small">Am Laptop: Studio → „Handy koppeln“. Tailscale muss auf beiden Geräten laufen.</p>
+        <h2>Mit dem Server koppeln</h2>
+        <p className="muted small">Im Studio (naklearn.torte-tech.de) → „Handy koppeln“ → QR-Code scannen.</p>
         <button className="primary full" onClick={scan}>QR-Code scannen</button>
-        <label>Server-Adresse <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://laptop.tailXXXX.ts.net:8742" /></label>
+        <label>Server-Adresse <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://naklearn.torte-tech.de" /></label>
         <label>Token <input value={token} onChange={(e) => setToken(e.target.value)} /></label>
         <button
           onClick={async () => {

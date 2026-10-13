@@ -62,7 +62,7 @@ export class SyncController {
   private async doSync(): Promise<void> {
     const p = await this.pairing();
     const last = await this.store.getMeta('last_sync');
-    if (!p) return this.set({ phase: 'unpaired', message: 'Noch nicht mit dem Laptop gekoppelt', lastSync: last ? Number(last) : null });
+    if (!p) return this.set({ phase: 'unpaired', message: 'Noch nicht mit dem Server gekoppelt', lastSync: last ? Number(last) : null });
     this.set({ phase: 'syncing', message: null });
     try {
       await syncStore(this.store, this.makeTransport(p.url, p.token));

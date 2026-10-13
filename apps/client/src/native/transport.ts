@@ -14,7 +14,7 @@ export function httpTransport(url: string, token: string, fetchImpl: typeof fetc
   return async (req) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('Zeitüberschreitung – Laptop nicht erreichbar')), timeoutMs);
+      timer = setTimeout(() => reject(new Error('Zeitüberschreitung – Server nicht erreichbar')), timeoutMs);
     });
     try {
       const res = await Promise.race([
