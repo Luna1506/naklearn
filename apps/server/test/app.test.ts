@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { InjectOptions } from 'fastify';
 import { describe, expect, it } from 'vitest';
+import { addDevice, createUser } from '../src/accounts.ts';
 import { buildApp } from '../src/app.ts';
 import type { Config } from '../src/config.ts';
 import * as repo from '../src/repo.ts';
@@ -21,7 +22,7 @@ async function setup(opts: { webDir?: boolean } = {}) {
   }
   const cfg: Config = {
     dataDir, port: 0, host: '127.0.0.1', token: 'secret', deviceId: 'laptop',
-    password: 'pw', adminName: 'luna', sessionSecret: 'session-secret', publicUrl: 'https://naklearn.example',
+    password: null, adminName: 'luna', sessionSecret: 'session-secret', publicUrl: 'https://naklearn.example',
     claudePath: '/bin/false', summaryModel: null, cardsModel: null, webDir,
   };
   const db = memDb();
@@ -29,14 +30,16 @@ async function setup(opts: { webDir?: boolean } = {}) {
   let t = new Date('2026-10-13T10:00:00+09:00').getTime();
   const worker = { wake: () => void woke++, resume: () => {}, status: () => ({ state: 'idle' as const, pauseReason: null, pausedUntil: null, current: null, queued: 0 }) };
   const raw = buildApp({ db, cfg, worker, now: () => t });
+  const user = createUser(db, { name: 'luna', password: 'pw-luna-123', isAdmin: true, now: t });
+  const { token } = addDevice(db, user.id, 'Test-Handy', t);
   // Standardmäßig wie die App mit Token; Auth-Tests verwenden `raw`.
-  const app = { inject: (o: InjectOptions) => raw.inject({ ...o, headers: { authorization: 'Bearer secret', ...o.headers } }) };
-  return { app, raw, db, cfg, woke: () => woke, advance: (ms: number) => void (t += ms) };
+  const app = { inject: (o: InjectOptions) => raw.inject({ ...o, headers: { authorization: `Bearer ${token}`, ...o.headers } }) };
+  return { app, raw, db, cfg, user, token, woke: () => woke, advance: (ms: number) => void (t += ms) };
 }
 
 /** Meldet sich an und liefert den Cookie-Header für Folgeanfragen. */
-async function login(raw: Awaited<ReturnType<typeof setup>>['raw'], password = 'pw') {
-  const r = await raw.inject({ method: 'POST', url: '/api/login', payload: { password } });
+async function login(raw: Awaited<ReturnType<typeof setup>>['raw'], password = 'pw-luna-123') {
+  const r = await raw.inject({ method: 'POST', url: '/api/login', payload: { name: 'luna', password } });
   expect(r.statusCode).toBe(200);
   return String(r.headers['set-cookie']).split(';')[0]!;
 }
@@ -162,10 +165,10 @@ describe('HTTP-API', () => {
 
 describe('Anmeldung', () => {
   it('ohne Token und Sitzung gibt es 401, mit Token 200', async () => {
-    const { raw } = await setup();
+    const { raw, token } = await setup();
     expect((await raw.inject({ method: 'GET', url: '/api/overview' })).statusCode).toBe(401);
     expect((await raw.inject({ method: 'GET', url: '/api/overview', headers: { authorization: 'Bearer falsch' } })).statusCode).toBe(401);
-    expect((await raw.inject({ method: 'GET', url: '/api/overview', headers: { authorization: 'Bearer secret' } })).statusCode).toBe(200);
+    expect((await raw.inject({ method: 'GET', url: '/api/overview', headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(200);
     expect((await raw.inject({ method: 'GET', url: '/api/gibtsnicht' })).statusCode).toBe(401);
   });
 
@@ -181,49 +184,49 @@ describe('Anmeldung', () => {
     const { raw } = await setup();
     const cookie = await login(raw);
     const [name, value] = cookie.split('=');
-    const [exp, mac] = value!.split('.');
-    const forged = `${name}=${Number(exp) + 86_400_000}.${mac}`;
+    const [uid, exp, mac] = value!.split('.');
+    const forged = `${name}=${uid}.${Number(exp) + 86_400_000}.${mac}`;
     expect((await raw.inject({ method: 'GET', url: '/api/overview', headers: { cookie: forged } })).statusCode).toBe(401);
   });
 
   it('Secure nur hinter HTTPS-Proxy', async () => {
     const { raw } = await setup();
-    const plain = await raw.inject({ method: 'POST', url: '/api/login', payload: { password: 'pw' } });
+    const plain = await raw.inject({ method: 'POST', url: '/api/login', payload: { name: 'luna', password: 'pw-luna-123' } });
     expect(String(plain.headers['set-cookie'])).not.toContain('Secure');
-    const https = await raw.inject({ method: 'POST', url: '/api/login', payload: { password: 'pw' }, headers: { 'x-forwarded-proto': 'https' } });
+    const https = await raw.inject({ method: 'POST', url: '/api/login', payload: { name: 'luna', password: 'pw-luna-123' }, headers: { 'x-forwarded-proto': 'https' } });
     expect(String(https.headers['set-cookie'])).toContain('Secure');
   });
 
   it('falsches Passwort 401, nach 5 Fehlversuchen 429 – auch mit richtigem Passwort, andere IP frei', async () => {
     const { raw, advance } = await setup();
     const from = (ip: string, password: string) =>
-      raw.inject({ method: 'POST', url: '/api/login', payload: { password }, remoteAddress: '172.18.0.2', headers: { 'x-forwarded-for': ip } });
+      raw.inject({ method: 'POST', url: '/api/login', payload: { name: 'luna', password }, remoteAddress: '172.18.0.2', headers: { 'x-forwarded-for': ip } });
     for (let i = 0; i < 5; i++) expect((await from('9.9.9.9', 'falsch')).statusCode).toBe(401);
-    expect((await from('9.9.9.9', 'pw')).statusCode).toBe(429);
-    expect((await from('8.8.8.8', 'pw')).statusCode).toBe(200);
+    expect((await from('9.9.9.9', 'pw-luna-123')).statusCode).toBe(429);
+    expect((await from('8.8.8.8', 'pw-luna-123')).statusCode).toBe(200);
     advance(15 * 60_000);
-    expect((await from('9.9.9.9', 'pw')).statusCode).toBe(200);
+    expect((await from('9.9.9.9', 'pw-luna-123')).statusCode).toBe(200);
   });
 
   it('gefälschtes X-Forwarded-For umgeht die Sperre nicht', async () => {
     const { raw } = await setup();
     const from = (xff: string, password: string) =>
-      raw.inject({ method: 'POST', url: '/api/login', payload: { password }, remoteAddress: '172.18.0.2', headers: { 'x-forwarded-for': xff } });
+      raw.inject({ method: 'POST', url: '/api/login', payload: { name: 'luna', password }, remoteAddress: '172.18.0.2', headers: { 'x-forwarded-for': xff } });
     for (let i = 0; i < 5; i++) await from(`10.0.0.${i}, 9.9.9.9`, 'falsch');
-    expect((await from('1.2.3.4, 9.9.9.9', 'pw')).statusCode).toBe(429);
+    expect((await from('1.2.3.4, 9.9.9.9', 'pw-luna-123')).statusCode).toBe(429);
   });
 
   it('hinter Cloudflare zählt die echte Client-IP, gefälschter Header ohne Cloudflare zählt nicht', async () => {
     const { raw } = await setup();
     const via = (edge: string, client: string, password: string) =>
-      raw.inject({ method: 'POST', url: '/api/login', payload: { password }, remoteAddress: '172.18.0.2', headers: { 'x-forwarded-for': `${client}, ${edge}`, 'cf-connecting-ip': client } });
+      raw.inject({ method: 'POST', url: '/api/login', payload: { name: 'luna', password }, remoteAddress: '172.18.0.2', headers: { 'x-forwarded-for': `${client}, ${edge}`, 'cf-connecting-ip': client } });
     for (let i = 0; i < 5; i++) expect((await via('104.16.0.5', '9.9.9.9', 'falsch')).statusCode).toBe(401);
-    expect((await via('104.16.0.5', '9.9.9.9', 'pw')).statusCode).toBe(429);
+    expect((await via('104.16.0.5', '9.9.9.9', 'pw-luna-123')).statusCode).toBe(429);
     // anderer Nutzer über denselben Cloudflare-Knoten ist nicht gesperrt
-    expect((await via('104.16.0.5', '8.8.8.8', 'pw')).statusCode).toBe(200);
+    expect((await via('104.16.0.5', '8.8.8.8', 'pw-luna-123')).statusCode).toBe(200);
     // direkt (ohne Cloudflare) mit wechselndem Header: Sperre greift trotzdem
     for (let i = 0; i < 5; i++) await via('5.5.5.5', `10.0.0.${i}`, 'falsch');
-    expect((await via('5.5.5.5', '10.0.0.99', 'pw')).statusCode).toBe(429);
+    expect((await via('5.5.5.5', '10.0.0.99', 'pw-luna-123')).statusCode).toBe(429);
   });
 
   it('leitet HTTP hinter dem Proxy auf die HTTPS-Adresse um', async () => {
@@ -263,40 +266,16 @@ describe('Anmeldung', () => {
   });
 
   it('CSRF: Sitzung mit fremder Origin wird abgelehnt, App mit Token und Origin nicht', async () => {
-    const { raw } = await setup();
+    const { raw, token } = await setup();
     const cookie = await login(raw);
     const evil = await raw.inject({ method: 'POST', url: '/api/worker/resume', headers: { cookie, host: 'naklearn.example', origin: 'https://evil.example' } });
     expect(evil.statusCode).toBe(403);
     const same = await raw.inject({ method: 'POST', url: '/api/worker/resume', headers: { cookie, host: 'naklearn.example', origin: 'https://naklearn.example' } });
     expect(same.statusCode).toBe(200);
     const app = await raw.inject({
-      method: 'POST', url: '/api/sync', headers: { authorization: 'Bearer secret', host: 'naklearn.example', origin: 'https://localhost' },
+      method: 'POST', url: '/api/sync', headers: { authorization: `Bearer ${token}`, host: 'naklearn.example', origin: 'https://localhost' },
       payload: { deviceId: 'phone', cursor: 0, push: { modules: [], notes: [], cards: [], revlog: [] } },
     });
     expect(app.statusCode).toBe(200);
-  });
-
-  it('Koppeln nur mit Sitzung, Adresse aus der Konfiguration', async () => {
-    const { raw } = await setup();
-    expect((await raw.inject({ method: 'GET', url: '/api/pair', headers: { authorization: 'Bearer secret' } })).statusCode).toBe(401);
-    const cookie = await login(raw);
-    const r = await raw.inject({ method: 'GET', url: '/api/pair', headers: { cookie } });
-    expect(r.statusCode).toBe(200);
-    expect(r.json()).toMatchObject({ url: 'https://naklearn.example', token: 'secret' });
-    expect(JSON.parse(r.json().payload)).toEqual({ v: 1, url: 'https://naklearn.example', token: 'secret' });
-    expect(r.json().qrSvg).toContain('<svg');
-  });
-});
-
-describe('Passwortwechsel', () => {
-  it('beendet bestehende Sitzungen', async () => {
-    const { raw, db, cfg } = await setup();
-    const cookie = await login(raw);
-    const worker = { wake: () => {}, resume: () => {}, status: () => ({ state: 'idle' as const, pauseReason: null, pausedUntil: null, current: null, queued: 0 }) };
-    const now = () => new Date('2026-10-13T10:00:00+09:00').getTime();
-    const restarted = buildApp({ db, cfg, worker, now });
-    expect((await restarted.inject({ method: 'GET', url: '/api/overview', headers: { cookie } })).statusCode).toBe(200);
-    const newPassword = buildApp({ db, cfg: { ...cfg, password: 'neu' }, worker, now });
-    expect((await newPassword.inject({ method: 'GET', url: '/api/overview', headers: { cookie } })).statusCode).toBe(401);
   });
 });

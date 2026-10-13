@@ -1,14 +1,7 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export const SESSION_COOKIE = 'naklearn_session';
 export const SESSION_TTL_MS = 30 * 24 * 3600_000;
-
-const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest();
-
-/** Zeitkonstanter Vergleich (über SHA-256, damit die Länge nichts verrät). */
-export function passwordMatches(given: string, expected: string): boolean {
-  return timingSafeEqual(sha(given), sha(expected));
-}
 
 const mac = (secret: string, exp: string) => createHmac('sha256', secret).update(exp).digest('base64url');
 
@@ -77,4 +70,21 @@ export class LoginLimiter {
   reset(ip: string): void {
     this.entries.delete(ip);
   }
+}
+
+const userKey = (secret: string, userId: string, epoch: number) => `${secret}\0${userId}\0${epoch}`;
+
+/** Sitzung einer Person: `<userId>.<ablauf>.<hmac>`; die Epoche steckt im Schlüssel (neues Passwort → ungültig). */
+export function createUserSession(secret: string, userId: string, epoch: number, now: number): string {
+  return `${userId}.${createSession(userKey(secret, userId, epoch), now)}`;
+}
+
+export function sessionUserId(value: string | undefined): string | null {
+  const i = value ? value.indexOf('.') : -1;
+  return i > 0 ? value!.slice(0, i) : null;
+}
+
+export function verifyUserSession(value: string | undefined, secret: string, userId: string, epoch: number, now: number): boolean {
+  if (!value || sessionUserId(value) !== userId) return false;
+  return verifySession(value.slice(userId.length + 1), userKey(secret, userId, epoch), now);
 }

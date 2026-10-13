@@ -116,4 +116,15 @@ describe('Einladungen', () => {
     expect(after.sessionEpoch).toBe(1);
     expect(checkLogin(db, 'Mia', 'neuesPasswort')).not.toBeNull();
   });
+  it('Reset-Link beendet auch App-Zugänge und macht weitere offene Links der Person ungültig', () => {
+    const db = memDb();
+    const u = createUser(db, { name: 'Mia', password: 'geheim123', now: NOW });
+    const { token: deviceToken } = addDevice(db, u.id, 'Handy', NOW);
+    const first = createInvite(db, { userId: u.id, now: NOW });
+    const second = createInvite(db, { userId: u.id, now: NOW });
+    expect(authenticateToken(db, deviceToken, NOW)).not.toBeNull();
+    acceptInvite(db, first, { password: 'neuesPasswort', now: NOW });
+    expect(authenticateToken(db, deviceToken, NOW)).toBeNull();
+    expect(inviteInfo(db, second, NOW)).toBeNull();
+  });
 });

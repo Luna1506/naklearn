@@ -172,6 +172,11 @@ export function acceptInvite(db: Db, token: string, i: { name?: string; password
       ? setPassword(db, inv.user_id, i.password)
       : createUser(db, { name: i.name ?? '', password: i.password, now: i.now });
     db.prepare('UPDATE invite SET used_at = ? WHERE token_hash = ?').run(i.now, inv.token_hash);
+    if (inv.user_id) {
+      // Reset heißt: Passwort vergessen oder kompromittiert → auch App-Zugänge und weitere offene Links der Person enden.
+      db.prepare('DELETE FROM device WHERE user_id = ?').run(inv.user_id);
+      db.prepare('UPDATE invite SET used_at = ? WHERE user_id = ? AND used_at IS NULL').run(i.now, inv.user_id);
+    }
     return user;
   });
 }

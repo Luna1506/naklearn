@@ -11,16 +11,12 @@ import { enqueueDeck, listJobs, regenerateDeck, retryJob, type Worker } from './
 import * as repo from './repo.ts';
 import { answer, getNext, getOverview, undo } from './study.ts';
 import { applyPush, pullSince } from './sync.ts';
-import QRCode from 'qrcode';
-import {
-  LoginLimiter, SESSION_COOKIE, clearSessionCookie, createSession, passwordMatches, readCookie, sessionCookie, verifySession,
-} from './auth.ts';
-import { clientIp } from './clientip.ts';
+import { authenticateToken, getUser, touchUser } from './accounts.ts';
+import { registerAccountRoutes } from './accountRoutes.ts';
+import { LoginLimiter, SESSION_COOKIE, readCookie, sessionUserId, verifyUserSession } from './auth.ts';
 import type { Config } from './config.ts';
-import { pairingPayload } from './pair.ts';
+import { NotFound, must, type Auth } from './http.ts';
 import { SyncRequestSchema } from '@naklearn/core';
-
-class NotFound extends Error {}
 
 const DateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const ModuleInput = z.object({
@@ -49,14 +45,8 @@ const AnswerInput = z.object({
   durationMs: z.number().min(0).max(3_600_000),
 });
 
-const LoginInput = z.object({ password: z.string().max(1000) });
 /** Ohne Anmeldung erreichbar (alles außerhalb von /api ist der Web-Client). */
-const PUBLIC_ROUTES = new Set(['/api/login', '/api/logout', '/api/health']);
-
-function must<T>(v: T | undefined, what: string): T {
-  if (v === undefined) throw new NotFound(`${what} nicht gefunden`);
-  return v;
-}
+const PUBLIC_ROUTES = new Set(['/api/login', '/api/logout', '/api/health', '/api/device/login', '/api/invites/:token', '/api/invites/:token/accept']);
 
 export function buildApp(deps: {
   db: Db;
@@ -70,10 +60,18 @@ export function buildApp(deps: {
   // nur dem direkten Gegenüber vertrauen, req.ip ist dann die vom Proxy angehängte Client-Adresse.
   const app = Fastify({ logger: false, bodyLimit: 16 << 20, trustProxy: (_addr: string, hop: number) => hop === 0 });
   const limiter = new LoginLimiter();
-  // Das Passwort fließt in den Schlüssel ein: ein neues Passwort beendet alle bestehenden Sitzungen.
-  const sessionKey = `${cfg.sessionSecret}\0${cfg.password ?? ''}`;
-  const hasSession = (req: FastifyRequest) => verifySession(readCookie(req.headers.cookie, SESSION_COOKIE), sessionKey, now());
-  const hasToken = (req: FastifyRequest) => req.headers.authorization === `Bearer ${cfg.token}`;
+  const sessionAuth = (req: FastifyRequest): Auth | null => {
+    const value = readCookie(req.headers.cookie, SESSION_COOKIE);
+    const id = sessionUserId(value);
+    const user = id ? getUser(db, id) : undefined;
+    return user && verifyUserSession(value, cfg.sessionSecret, user.id, user.sessionEpoch, now()) ? { user, deviceId: null } : null;
+  };
+  const deviceAuth = (req: FastifyRequest): Auth | null => {
+    const h = req.headers.authorization;
+    const r = h?.startsWith('Bearer ') ? authenticateToken(db, h.slice(7), now()) : null;
+    return r ? { user: r.user, deviceId: r.deviceId } : null;
+  };
+  app.decorateRequest('auth', null);
 
   app.register(multipart, { limits: { fileSize: 300 * 1024 * 1024, files: 50 } });
   if (cfg.webDir) app.register(fastifyStatic, { root: cfg.webDir, prefix: '/' });
@@ -83,20 +81,21 @@ export function buildApp(deps: {
     if (cfg.publicUrl?.startsWith('https://') && req.headers['x-forwarded-proto'] && req.protocol === 'http') {
       return reply.redirect(cfg.publicUrl + req.url, 301);
     }
-    const bearer = hasToken(req);
+    const device = deviceAuth(req);
     // Schreibende Browser-Requests von fremden Webseiten (CSRF) ablehnen; die App schickt ein Token, das keine fremde Seite kennt.
     const origin = req.headers.origin;
-    if (!bearer && origin && req.method !== 'GET' && req.method !== 'HEAD') {
+    if (!device && origin && req.method !== 'GET' && req.method !== 'HEAD') {
       let sameOrigin = false;
       try {
         sameOrigin = new URL(origin).host === req.headers.host;
       } catch {}
       if (!sameOrigin) return reply.code(403).send({ error: 'forbidden origin' });
     }
+    req.auth = device ?? sessionAuth(req);
     const route = req.routeOptions.url;
     if (route !== undefined && (!route.startsWith('/api/') || PUBLIC_ROUTES.has(route))) return;
-    if (bearer || hasSession(req)) return;
-    return reply.code(401).send({ error: 'unauthorized' });
+    if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
+    touchUser(db, req.auth.user.id, now());
   });
 
   app.setErrorHandler((err, _req, reply) => {
@@ -108,27 +107,9 @@ export function buildApp(deps: {
     return reply.code(500).send({ error: String(e.message ?? err) });
   });
 
-  // ---- Anmeldung ----
+  // ---- Anmeldung und Konten ----
   app.get('/api/health', async () => ({ ok: true }));
-
-  app.post('/api/login', async (req, reply) => {
-    const { password } = LoginInput.parse(req.body);
-    const t = now();
-    const ip = clientIp(req.ip, req.headers['cf-connecting-ip']);
-    if (limiter.blocked(ip, t)) return reply.code(429).send({ error: 'Zu viele Fehlversuche – bitte 15 Minuten warten.' });
-    if (!passwordMatches(password, cfg.password ?? '')) {
-      limiter.fail(ip, t);
-      return reply.code(401).send({ error: 'Falsches Passwort' });
-    }
-    limiter.reset(ip);
-    reply.header('set-cookie', sessionCookie(createSession(sessionKey, t), req.protocol === 'https'));
-    return { ok: true };
-  });
-
-  app.post('/api/logout', async (req, reply) => {
-    reply.header('set-cookie', clearSessionCookie(req.protocol === 'https'));
-    return { ok: true };
-  });
+  registerAccountRoutes(app, { db, cfg, now, limiter });
 
   // ---- Übersicht und Module ----
   app.get('/api/overview', async () => getOverview(db, now()));
@@ -284,15 +265,6 @@ export function buildApp(deps: {
       throw new NotFound((e as Error).message);
     }
     return { ok: true };
-  });
-
-  // ---- Koppeln (nur im eingeloggten Studio, nicht per App-Token) ----
-  app.get('/api/pair', async (req, reply) => {
-    if (!hasSession(req)) return reply.code(401).send({ error: 'unauthorized' });
-    const url = cfg.publicUrl;
-    const payload = url ? pairingPayload(url, cfg.token) : null;
-    const qrSvg = payload ? await QRCode.toString(payload, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }) : null;
-    return { url, token: cfg.token, payload, qrSvg };
   });
 
   // ---- Sync ----

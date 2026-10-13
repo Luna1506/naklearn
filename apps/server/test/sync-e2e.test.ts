@@ -2,6 +2,7 @@ import type { SyncRequest, SyncResponse } from '@naklearn/core';
 import { LocalStore, syncStore, type SqlAdapter } from '@naklearn/store';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
+import { addDevice, createUser } from '../src/accounts.ts';
 import { buildApp } from '../src/app.ts';
 import { applyPush, pullSince } from '../src/sync.ts';
 import * as repo from '../src/repo.ts';
@@ -27,9 +28,11 @@ const NOW = new Date('2026-10-06T10:00:00+09:00').getTime();
 
 async function setup() {
   const db = memDb();
-  const cfg = { dataDir: '/tmp', port: 0, host: '127.0.0.1', token: 't', deviceId: 'laptop', password: 'pw', adminName: 'luna', sessionSecret: 's', publicUrl: null, claudePath: '', summaryModel: null, cardsModel: null, webDir: null };
+  const cfg = { dataDir: '/tmp', port: 0, host: '127.0.0.1', token: 't', deviceId: 'laptop', password: null, adminName: 'luna', sessionSecret: 's', publicUrl: null, claudePath: '', summaryModel: null, cardsModel: null, webDir: null };
   const worker = { wake() {}, resume() {}, status: () => ({ state: 'idle' as const, pauseReason: null, pausedUntil: null, current: null, queued: 0 }) };
   const app = buildApp({ db, cfg, worker, now: () => NOW });
+  const owner = createUser(db, { name: 'luna', password: 'pw-luna-123', isAdmin: true, now: NOW });
+  const { token } = addDevice(db, owner.id, 'Handy', NOW);
   // Server-Daten entstehen kurz vor der (festen) Testuhr, wie im echten Leben vor dem Lernen.
   const t0 = NOW - 60_000;
   const mod = repo.createModule(db, { name: 'UIUX', language: 'en' }, t0);
@@ -43,7 +46,7 @@ async function setup() {
   const transport = async (req: SyncRequest): Promise<SyncResponse> => {
     calls++;
     if (failNext) { failNext = false; throw new Error('Netz weg'); }
-    const r = await app.inject({ method: 'POST', url: '/api/sync', payload: req, headers: { authorization: 'Bearer t' } });
+    const r = await app.inject({ method: 'POST', url: '/api/sync', payload: req, headers: { authorization: `Bearer ${token}` } });
     if (r.statusCode !== 200) throw new Error(r.body);
     return r.json();
   };

@@ -1,19 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  LoginLimiter, SESSION_COOKIE, SESSION_TTL_MS, clearSessionCookie, createSession, passwordMatches, readCookie,
-  sessionCookie, verifySession,
+  LoginLimiter, SESSION_COOKIE, SESSION_TTL_MS, clearSessionCookie, createSession, createUserSession, readCookie,
+  sessionCookie, sessionUserId, verifySession, verifyUserSession,
 } from '../src/auth.ts';
 
 const NOW = 1_800_000_000_000;
-
-describe('passwordMatches', () => {
-  it('vergleicht exakt, auch bei unterschiedlicher Länge', () => {
-    expect(passwordMatches('geheim', 'geheim')).toBe(true);
-    expect(passwordMatches('geheim ', 'geheim')).toBe(false);
-    expect(passwordMatches('', 'geheim')).toBe(false);
-    expect(passwordMatches('ä€😀', 'ä€😀')).toBe(true);
-  });
-});
 
 describe('Sitzung', () => {
   it('ist bis zum Ablauf gültig', () => {
@@ -74,5 +65,19 @@ describe('LoginLimiter', () => {
     l.reset('3.3.3.3');
     l.fail('3.3.3.3', NOW);
     expect(l.blocked('3.3.3.3', NOW)).toBe(false);
+  });
+});
+
+describe('Personen-Sitzung', () => {
+  it('enthält die Person, gilt nur mit passender Epoche und Geheimnis', () => {
+    const s = createUserSession('k', 'user-1', 0, NOW);
+    expect(sessionUserId(s)).toBe('user-1');
+    expect(verifyUserSession(s, 'k', 'user-1', 0, NOW)).toBe(true);
+    expect(verifyUserSession(s, 'k', 'user-1', 1, NOW)).toBe(false);
+    expect(verifyUserSession(s, 'k', 'user-2', 0, NOW)).toBe(false);
+    expect(verifyUserSession(s, 'anders', 'user-1', 0, NOW)).toBe(false);
+    expect(verifyUserSession(s, 'k', 'user-1', 0, NOW + SESSION_TTL_MS)).toBe(false);
+    expect(sessionUserId(undefined)).toBeNull();
+    expect(sessionUserId('ohne-punkt')).toBeNull();
   });
 });
