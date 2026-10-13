@@ -15,7 +15,7 @@ import { authenticateToken, getUser, touchUser } from './accounts.ts';
 import { registerAccountRoutes } from './accountRoutes.ts';
 import { LoginLimiter, SESSION_COOKIE, readCookie, sessionUserId, verifyUserSession } from './auth.ts';
 import type { Config } from './config.ts';
-import { NotFound, must, type Auth } from './http.ts';
+import { NotFound, me, must, type Auth } from './http.ts';
 import { SyncRequestSchema } from '@naklearn/core';
 
 const DateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -112,30 +112,65 @@ export function buildApp(deps: {
   registerAccountRoutes(app, { db, cfg, now, limiter });
 
   // ---- Übersicht und Module ----
-  app.get('/api/overview', async () => getOverview(db, now()));
+  app.get('/api/overview', async (req) => getOverview(db, me(req).id, now()));
+
+  app.get('/api/modules/all', async (req) => repo.listAllModules(db, me(req).id));
 
   app.post('/api/modules', async (req) => {
     const input = ModuleInput.parse(req.body);
-    return repo.createModule(db, input, now());
+    const uid = me(req).id;
+    const m = repo.createModule(db, { ...input, createdBy: uid }, now());
+    return repo.getMyModule(db, uid, m.id)!;
   });
 
   app.get('/api/modules/:id', async (req) => {
     const { id } = IdParam.parse(req.params);
-    const module = must(repo.getModule(db, id), 'Modul');
+    const uid = me(req).id;
+    const shared = must(repo.getModule(db, id), 'Modul');
+    const mine = repo.getMyModule(db, uid, id);
     const decks = repo.listDecks(db, id).map((d) => ({ ...d, noteCount: repo.countNotes(db, d.id) }));
-    return { module, decks };
+    return { module: mine ?? shared, decks, mine: !!mine, memberCount: repo.memberIds(db, id).length };
   });
 
   app.patch('/api/modules/:id', async (req) => {
     const { id } = IdParam.parse(req.params);
+    const uid = me(req).id;
     must(repo.getModule(db, id), 'Modul');
-    return repo.updateModule(db, id, ModulePatch.parse(req.body), now());
+    const patch = ModulePatch.parse(req.body);
+    const personal = patch.examDate !== undefined || patch.newPerDay !== undefined;
+    if (personal && !repo.getMyModule(db, uid, id)) {
+      throw Object.assign(new Error('Erst zu deinen Modulen hinzufügen'), { statusCode: 409 });
+    }
+    if (patch.name !== undefined || patch.language !== undefined) {
+      repo.updateModule(db, id, { ...(patch.name !== undefined && { name: patch.name }), ...(patch.language !== undefined && { language: patch.language }) }, now());
+    }
+    if (personal) repo.updateMembership(db, uid, id, { examDate: patch.examDate, newPerDay: patch.newPerDay }, now());
+    return repo.getMyModule(db, uid, id) ?? repo.getModule(db, id)!;
   });
 
   app.delete('/api/modules/:id', async (req) => {
     const { id } = IdParam.parse(req.params);
+    const uid = me(req).id;
     must(repo.getModule(db, id), 'Modul');
+    if (repo.memberIds(db, id).some((u) => u !== uid)) {
+      throw Object.assign(new Error('Andere lernen dieses Modul – nur aus deinen Modulen entfernen'), { statusCode: 409 });
+    }
+    repo.leaveModule(db, uid, id);
     repo.deleteModule(db, id, now());
+    return { ok: true };
+  });
+
+  app.post('/api/modules/:id/join', async (req) => {
+    const { id } = IdParam.parse(req.params);
+    must(repo.getModule(db, id), 'Modul');
+    repo.joinModule(db, me(req).id, id, now());
+    return { ok: true };
+  });
+
+  app.post('/api/modules/:id/leave', async (req) => {
+    const { id } = IdParam.parse(req.params);
+    must(repo.getModule(db, id), 'Modul');
+    repo.leaveModule(db, me(req).id, id);
     return { ok: true };
   });
 
@@ -220,7 +255,7 @@ export function buildApp(deps: {
   });
 
   // ---- Notes und Karten ----
-  app.get('/api/notes', async (req) => repo.listNotes(db, NotesQuery.parse(req.query)));
+  app.get('/api/notes', async (req) => repo.listNotes(db, { ...NotesQuery.parse(req.query), userId: me(req).id }));
 
   app.patch('/api/notes/:id', async (req) => {
     const { id } = IdParam.parse(req.params);
@@ -244,23 +279,23 @@ export function buildApp(deps: {
     const { id } = IdParam.parse(req.params);
     must(repo.getCard(db, id), 'Karte');
     const { suspended } = z.object({ suspended: z.boolean() }).parse(req.body);
-    repo.setCardSuspended(db, id, suspended, now());
+    repo.setCardFlag(db, me(req).id, id, suspended, now());
     return { ok: true };
   });
 
   // ---- Lernen ----
-  app.get('/api/study/next', async (req) => getNext(db, ScopeQuery.parse(req.query), now()));
+  app.get('/api/study/next', async (req) => getNext(db, me(req).id, ScopeQuery.parse(req.query), now()));
 
   app.post('/api/study/answer', async (req) => {
     const a = AnswerInput.parse(req.body);
     must(repo.getCard(db, a.cardId), 'Karte');
-    return answer(db, { ...a, deviceId: cfg.deviceId, now: now() });
+    return answer(db, { ...a, userId: me(req).id, deviceId: cfg.deviceId, now: now() });
   });
 
   app.post('/api/study/undo', async (req) => {
     const { revlogId } = z.object({ revlogId: z.string().min(1) }).parse(req.body);
     try {
-      undo(db, revlogId, cfg.deviceId, now());
+      undo(db, me(req).id, revlogId, cfg.deviceId, now());
     } catch (e) {
       throw new NotFound((e as Error).message);
     }
@@ -270,7 +305,7 @@ export function buildApp(deps: {
   // ---- Sync ----
   app.post('/api/sync', async (req) => {
     const body = SyncRequestSchema.parse(req.body);
-    applyPush(db, body.push);
+    applyPush(db, me(req).id, body.push);
     return pullSince(db, body.cursor);
   });
 

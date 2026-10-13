@@ -3,7 +3,7 @@ import {
   type SyncPull, type SyncPush, type SyncResponse,
 } from '@naklearn/core';
 import { tx, type Db } from './db.ts';
-import { insertRevlog, nextSeq } from './repo.ts';
+import { getMyModule, insertRevlog, nextSeq, updateMembership } from './repo.ts';
 import { recomputeCard } from './study.ts';
 
 type Row = Record<string, any>;
@@ -46,7 +46,7 @@ function reconcileCards(db: Db, noteId: string): void {
  * Löschungen auf dem Server bleiben bestehen; abgelehnte Zeilen werden neu nummeriert, damit das Gerät
  * die gewinnende Version zieht; Lücken-Karten werden danach an die gewinnende Notiz angeglichen.
  */
-export function applyPush(db: Db, push: SyncPush): void {
+export function applyPush(db: Db, userId: string, push: SyncPush): void {
   tx(db, () => {
     const touchedNotes = new Set<string>();
     for (const m of push.modules) {
@@ -56,8 +56,9 @@ export function applyPush(db: Db, push: SyncPush): void {
         bump(db, 'module', m.id);
         continue;
       }
-      db.prepare('UPDATE module SET name = ?, language = ?, exam_date = ?, new_per_day = ?, deleted = ?, updated_at = ?, seq = ? WHERE id = ?')
-        .run(m.name, m.language, m.examDate, m.newPerDay, m.deleted ? 1 : 0, m.updatedAt, nextSeq(db), m.id);
+      db.prepare('UPDATE module SET name = ?, language = ?, deleted = ?, updated_at = ?, seq = ? WHERE id = ?')
+        .run(m.name, m.language, m.deleted ? 1 : 0, m.updatedAt, nextSeq(db), m.id);
+      if (getMyModule(db, userId, m.id)) updateMembership(db, userId, m.id, { examDate: m.examDate, newPerDay: m.newPerDay }, m.updatedAt);
     }
     for (const n of push.notes) {
       const cur = current(db, 'note', n.id);
@@ -88,10 +89,10 @@ export function applyPush(db: Db, push: SyncPush): void {
     for (const id of touchedNotes) reconcileCards(db, id);
     const touched = new Set<string>();
     for (const r of push.revlog) {
-      insertRevlog(db, r);
+      insertRevlog(db, r, userId);
       touched.add(r.cardId);
     }
-    for (const id of touched) recomputeCard(db, id);
+    for (const id of touched) recomputeCard(db, userId, id);
   });
 }
 

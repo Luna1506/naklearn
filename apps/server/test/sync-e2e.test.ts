@@ -35,7 +35,7 @@ async function setup() {
   const { token } = addDevice(db, owner.id, 'Handy', NOW);
   // Server-Daten entstehen kurz vor der (festen) Testuhr, wie im echten Leben vor dem Lernen.
   const t0 = NOW - 60_000;
-  const mod = repo.createModule(db, { name: 'UIUX', language: 'en' }, t0);
+  const mod = repo.createModule(db, { name: 'UIUX', language: 'en', createdBy: owner.id }, t0);
   const deck = repo.createDeck(db, { moduleId: mod.id, title: 'Ch1', pdfSha256: 's' }, t0);
   repo.replaceSlides(db, deck.id, [{ deckId: deck.id, page: 1, text: 't', image: '1.jpg' }]);
   for (let i = 0; i < 3; i++) {
@@ -52,7 +52,7 @@ async function setup() {
   };
   let phoneNow = NOW;
   const phone = await LocalStore.open(nodeAdapter(), { now: () => phoneNow });
-  return { db, mod, deck, phone, transport, calls: () => calls, failOnce: () => (failNext = true), tick: (ms: number) => (phoneNow += ms) };
+  return { db, owner, mod, deck, phone, transport, calls: () => calls, failOnce: () => (failNext = true), tick: (ms: number) => (phoneNow += ms) };
 }
 
 describe('Sync Handy ↔ Laptop', () => {
@@ -66,37 +66,37 @@ describe('Sync Handy ↔ Laptop', () => {
   });
 
   it('offline gelernte Karten landen auf dem Laptop, Laptop-Lernen landet auf dem Handy', async () => {
-    const { db, phone, transport } = await setup();
+    const { db, owner, phone, transport } = await setup();
     await syncStore(phone, transport);
     const c = (await phone.next({})).card!;
     await phone.answer(c.cardId, 4, 1000);
     const pushed = await syncStore(phone, transport);
     expect(pushed.pushed).toBe(1);
-    expect(repo.studyRows(db).find((x) => x.cardId === c.cardId)!.state.state).toBe(2);
+    expect(repo.studyRows(db, owner.id).find((x) => x.cardId === c.cardId)!.state.state).toBe(2);
 
-    const laptopCard = getNext(db, {}, NOW).card!;
+    const laptopCard = getNext(db, owner.id, {}, NOW).card!;
     expect(laptopCard.cardId).not.toBe(c.cardId);
-    answer(db, { cardId: laptopCard.cardId, rating: 3, durationMs: 1, deviceId: 'laptop', now: NOW });
+    answer(db, { userId: owner.id, cardId: laptopCard.cardId, rating: 3, durationMs: 1, deviceId: 'laptop', now: NOW });
     await syncStore(phone, transport);
     expect((await phone.next({})).counts.learning).toBe(1);
   });
 
   it('dieselbe Karte auf beiden Geräten gelernt → gleicher Zustand überall', async () => {
-    const { db, phone, transport, tick } = await setup();
+    const { db, owner, phone, transport, tick } = await setup();
     await syncStore(phone, transport);
     const cardId = (await phone.next({})).card!.cardId;
-    answer(db, { cardId, rating: 3, durationMs: 1, deviceId: 'laptop', now: NOW });
+    answer(db, { userId: owner.id, cardId, rating: 3, durationMs: 1, deviceId: 'laptop', now: NOW });
     tick(15 * 60_000);
     await phone.answer(cardId, 3, 1000);
     await syncStore(phone, transport);
-    const server = repo.studyRows(db).find((x) => x.cardId === cardId)!.state;
+    const server = repo.studyRows(db, owner.id).find((x) => x.cardId === cardId)!.state;
     const [local] = await phone.db.all<{ json: string }>('SELECT json FROM card_state WHERE card_id = ?', [cardId]);
     expect(JSON.parse(local!.json)).toEqual(server);
     expect(server.reps).toBe(2);
   });
 
   it('bricht der Sync ab, geht nichts verloren und nichts doppelt', async () => {
-    const { db, phone, transport, failOnce } = await setup();
+    const { db, owner, phone, transport, failOnce } = await setup();
     await syncStore(phone, transport);
     const c = (await phone.next({})).card!;
     await phone.answer(c.cardId, 3, 1000);
@@ -106,11 +106,11 @@ describe('Sync Handy ↔ Laptop', () => {
     expect(dirty[0]!.n).toBe(1);
     await syncStore(phone, transport);
     await syncStore(phone, transport);
-    expect(repo.listRevlogForCard(db, c.cardId)).toHaveLength(1);
+    expect(repo.listRevlogForCard(db, owner.id, c.cardId)).toHaveLength(1);
   });
 
   it('Bearbeitung, Pausieren und Prüfungsdatum vom Handy erreichen den Laptop', async () => {
-    const { db, mod, phone, transport, tick } = await setup();
+    const { db, owner, mod, phone, transport, tick } = await setup();
     await syncStore(phone, transport);
     tick(60_000);
     const c = (await phone.next({})).card!;
@@ -120,24 +120,24 @@ describe('Sync Handy ↔ Laptop', () => {
     await syncStore(phone, transport);
     expect(repo.getNote(db, c.noteId)!.front).toBe('Neu vom Handy');
     expect(repo.getCard(db, c.cardId)!.suspended).toBe(true);
-    expect(repo.getModule(db, mod.id)!.examDate).toBe('2026-10-30');
+    expect(repo.getMyModule(db, owner.id, mod.id)!.examDate).toBe('2026-10-30');
     const [dirtyNotes] = await phone.db.all<{ n: number }>('SELECT COUNT(*) AS n FROM note WHERE dirty = 1');
     expect(dirtyNotes!.n).toBe(0);
   });
 
   it('Rückgängig auf dem Handy nach bereits erfolgtem Sync', async () => {
-    const { db, phone, transport } = await setup();
+    const { db, owner, phone, transport } = await setup();
     await syncStore(phone, transport);
     const c = (await phone.next({})).card!;
     const { revlogId } = await phone.answer(c.cardId, 4, 1000);
     await syncStore(phone, transport);
     await phone.undo(revlogId);
     await syncStore(phone, transport);
-    expect(repo.studyRows(db).find((x) => x.cardId === c.cardId)!.state.state).toBe(0);
+    expect(repo.studyRows(db, owner.id).find((x) => x.cardId === c.cardId)!.state.state).toBe(0);
   });
 
   it('Löschen auf dem Handy erreicht den Laptop', async () => {
-    const { db, phone, transport, tick } = await setup();
+    const { db, owner, phone, transport, tick } = await setup();
     await syncStore(phone, transport);
     tick(60_000);
     const c = (await phone.next({})).card!;
@@ -148,10 +148,10 @@ describe('Sync Handy ↔ Laptop', () => {
   });
 
   it('vollständiger Sync über viele Seiten, auch wenn Eltern-Zeilen später geändert wurden', async () => {
-    const { db, deck, phone } = await setup();
+    const { db, owner, deck, phone } = await setup();
     repo.updateDeck(db, deck.id, { status: 'ready' }, NOW); // Deck bekommt eine höhere seq als seine Notes
     const paged = async (req: SyncRequest): Promise<SyncResponse> => {
-      applyPush(db, req.push);
+      applyPush(db, owner.id, req.push);
       return pullSince(db, req.cursor, 2);
     };
     await syncStore(phone, paged);
@@ -159,7 +159,7 @@ describe('Sync Handy ↔ Laptop', () => {
   });
 
   it('Handy-Änderung gewinnt gegen die Version, die das Handy gesehen hat – auch bei nachgehender Uhr', async () => {
-    const { db, phone, transport } = await setup();
+    const { db, owner, phone, transport } = await setup();
     await syncStore(phone, transport);
     const c = (await phone.next({})).card!;
     repo.updateNote(db, c.noteId, { front: 'Laptop' }, NOW + 10 * 60_000); // Laptop-Uhr 10 min voraus
@@ -170,7 +170,7 @@ describe('Sync Handy ↔ Laptop', () => {
   });
 
   it('abgelehnte (ältere) Handy-Änderung wird durch die Server-Version ersetzt', async () => {
-    const { db, phone, transport } = await setup();
+    const { db, owner, phone, transport } = await setup();
     await syncStore(phone, transport);
     const c = (await phone.next({})).card!;
     await phone.updateNote(c.noteId, { front: 'Handy offline', back: 'B' });
@@ -181,7 +181,7 @@ describe('Sync Handy ↔ Laptop', () => {
   });
 
   it('Löschungen auf dem Laptop verschwinden vom Handy', async () => {
-    const { db, deck, phone, transport } = await setup();
+    const { db, owner, deck, phone, transport } = await setup();
     await syncStore(phone, transport);
     repo.deleteDeck(db, deck.id);
     await syncStore(phone, transport);

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import * as repo from '../src/repo.ts';
-import { memDb } from './helpers.ts';
+import { addUser, memDb } from './helpers.ts';
 
 function setup() {
   const db = memDb();
-  const mod = repo.createModule(db, { name: 'UI/UX', language: 'en' }, 1000);
+  const U = addUser(db);
+  const mod = repo.createModule(db, { name: 'UI/UX', language: 'en', createdBy: U }, 1000);
   const deck = repo.createDeck(db, { moduleId: mod.id, title: 'Ch1', pdfSha256: 'abc' }, 1000);
-  return { db, mod, deck };
+  return { db, U, mod, deck };
 }
 
 describe('repo', () => {
@@ -19,12 +20,12 @@ describe('repo', () => {
   });
 
   it('aktualisiert Module und blendet gelöschte aus', () => {
-    const { db, mod } = setup();
-    expect(repo.updateModule(db, mod.id, { examDate: '2026-10-30', newPerDay: 30 }, 2000)).toMatchObject({
-      examDate: '2026-10-30', newPerDay: 30, updatedAt: 2000,
-    });
+    const { db, U, mod } = setup();
+    repo.updateMembership(db, U, mod.id, { examDate: '2026-10-30', newPerDay: 30 }, 2000);
+    expect(repo.getMyModule(db, U, mod.id)).toMatchObject({ examDate: '2026-10-30', newPerDay: 30, updatedAt: 2000 });
     repo.deleteModule(db, mod.id, 3000);
     expect(repo.listModules(db)).toHaveLength(0);
+    expect(repo.listMyModules(db, U)).toHaveLength(0);
   });
 
   it('speichert die Zusammenfassung eines Foliensatzes', () => {
@@ -78,24 +79,24 @@ describe('repo', () => {
   });
 
   it('studyRows liefert nur aktive Karten mit Zustand', () => {
-    const { db, deck, mod } = setup();
+    const { db, U, deck, mod } = setup();
     const { cards } = repo.insertNote(db, {
       deckId: deck.id, kind: 'qa', front: 'Q', back: 'A', slideRefs: [1], frontImagePage: null,
       tags: [], source: 'chunk', position: 5,
     }, 1000);
-    const rows = repo.studyRows(db);
+    const rows = repo.studyRows(db, U);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ cardId: cards[0]!.id, moduleId: mod.id, sortKey: [deck.position, 5, 0], firstReviewedAt: null });
     expect(rows[0]!.state.state).toBe(0);
     repo.deleteDeck(db, deck.id, 2000);
-    expect(repo.studyRows(db)).toHaveLength(0);
+    expect(repo.studyRows(db, U)).toHaveLength(0);
   });
 
   it('insertRevlog ist idempotent', () => {
-    const { db } = setup();
+    const { db, U } = setup();
     const e = { id: 'r1', cardId: 'c1', rating: 3 as const, reviewedAt: 1, durationMs: 5, deviceId: 'd', revokes: null };
-    repo.insertRevlog(db, e);
-    repo.insertRevlog(db, e);
-    expect(repo.listRevlogForCard(db, 'c1')).toHaveLength(1);
+    repo.insertRevlog(db, e, U);
+    repo.insertRevlog(db, e, U);
+    expect(repo.listRevlogForCard(db, U, 'c1')).toHaveLength(1);
   });
 });

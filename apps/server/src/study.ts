@@ -6,13 +6,13 @@ import {
 import { tx, type Db } from './db.ts';
 import * as repo from './repo.ts';
 
-function queueModules(db: Db): QueueModule[] {
-  return repo.listModules(db).map((m) => ({ id: m.id, examDate: m.examDate, newPerDay: m.newPerDay }));
+function queueModules(db: Db, userId: string): QueueModule[] {
+  return repo.listMyModules(db, userId).map((m) => ({ id: m.id, examDate: m.examDate, newPerDay: m.newPerDay }));
 }
 
-export function getNext(db: Db, scope: Scope, now: number): { card: StudyCard | null; counts: QueueCounts } {
-  const mods = repo.listModules(db);
-  const { next, counts } = nextCard(repo.studyRows(db), queueModules(db), scope, now);
+export function getNext(db: Db, userId: string, scope: Scope, now: number): { card: StudyCard | null; counts: QueueCounts } {
+  const mods = repo.listMyModules(db, userId);
+  const { next, counts } = nextCard(repo.studyRows(db, userId), queueModules(db, userId), scope, now);
   if (!next) return { card: null, counts };
   const note = repo.getNote(db, next.noteId)!;
   const card = repo.getCard(db, next.cardId)!;
@@ -25,15 +25,15 @@ export function getNext(db: Db, scope: Scope, now: number): { card: StudyCard | 
   return { card: toStudyCard({ note, card, moduleName: mod.name, deckTitle: deck.title, intervals }), counts };
 }
 
-export function recomputeCard(db: Db, cardId: string): void {
-  const logs = repo.listRevlogForCard(db, cardId);
+export function recomputeCard(db: Db, userId: string, cardId: string): void {
+  const logs = repo.listRevlogForCard(db, userId, cardId);
   const first = effectiveLogs(logs)[0]?.reviewedAt ?? null;
-  repo.saveCardState(db, cardId, replay(logs), first);
+  repo.saveCardState(db, userId, cardId, replay(logs), first);
 }
 
 export function answer(
   db: Db,
-  i: { cardId: string; rating: Grade; durationMs: number; deviceId: string; now: number },
+  i: { userId: string; cardId: string; rating: Grade; durationMs: number; deviceId: string; now: number },
 ): { revlogId: string } {
   if (!repo.getCard(db, i.cardId)) throw new Error(`Karte ${i.cardId} nicht gefunden`);
   const id = newId();
@@ -41,20 +41,20 @@ export function answer(
     repo.insertRevlog(db, {
       id, cardId: i.cardId, rating: i.rating, reviewedAt: i.now, durationMs: Math.max(0, Math.round(i.durationMs)),
       deviceId: i.deviceId, revokes: null,
-    });
-    recomputeCard(db, i.cardId);
+    }, i.userId);
+    recomputeCard(db, i.userId, i.cardId);
   });
   return { revlogId: id };
 }
 
-export function undo(db: Db, revlogId: string, deviceId: string, now: number): void {
+export function undo(db: Db, userId: string, revlogId: string, deviceId: string, now: number): void {
   const target = repo.getRevlog(db, revlogId);
-  if (!target || target.revokes !== null) throw new Error('Bewertung nicht gefunden');
+  if (!target || target.revokes !== null || repo.revlogOwner(db, revlogId) !== userId) throw new Error('Bewertung nicht gefunden');
   const already = db.prepare('SELECT 1 FROM revlog WHERE revokes = ?').get(revlogId);
   if (already) throw new Error('Bewertung wurde bereits zurückgenommen');
   tx(db, () => {
-    repo.insertRevlog(db, { id: newId(), cardId: target.cardId, rating: 0, reviewedAt: now, durationMs: 0, deviceId, revokes: revlogId });
-    recomputeCard(db, target.cardId);
+    repo.insertRevlog(db, { id: newId(), cardId: target.cardId, rating: 0, reviewedAt: now, durationMs: 0, deviceId, revokes: revlogId }, userId);
+    recomputeCard(db, userId, target.cardId);
   });
 }
 
@@ -64,14 +64,14 @@ export interface Overview {
   modules: (ModuleStats & { name: string; language: Language; examDate: string | null; newPerDay: number })[];
 }
 
-export function getOverview(db: Db, now: number): Overview {
-  const times = repo.allReviewTimes(db);
+export function getOverview(db: Db, userId: string, now: number): Overview {
+  const times = repo.allReviewTimes(db, userId);
   const today = studyDay(now);
-  const rows = repo.studyRows(db);
+  const rows = repo.studyRows(db, userId);
   return {
     studiedToday: times.filter((t) => studyDay(t) === today).length,
     streak: streak(times, now),
-    modules: repo.listModules(db).map((m) => ({
+    modules: repo.listMyModules(db, userId).map((m) => ({
       ...moduleStats(rows, { id: m.id, examDate: m.examDate, newPerDay: m.newPerDay }, now),
       name: m.name,
       language: m.language,

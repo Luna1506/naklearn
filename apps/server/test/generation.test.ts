@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { ClaudeRequest, ClaudeResult } from '../src/claude.ts';
 import { applyCardLimits, createWorker, enqueueDeck, listJobs, regenerateDeck, resetRunningJobs, retryJob, sanitizeNote } from '../src/generation.ts';
 import * as repo from '../src/repo.ts';
-import { memDb } from './helpers.ts';
+import { addUser, memDb } from './helpers.ts';
 
 const PAGES = 6;
 const usage = { model: 'm', inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0.01 };
@@ -132,7 +132,7 @@ describe('Worker: Zusammenfassung → Karten', () => {
     enqueueDeck(db, deck.id);
     await drain();
     const keep = repo.listNotes(db, { deckId: deck.id })[0]!;
-    repo.insertRevlog(db, { id: 'r1', cardId: keep.cards[0]!.id, rating: 3, reviewedAt: 1, durationMs: 1, deviceId: 'x', revokes: null });
+    repo.insertRevlog(db, { id: 'r1', cardId: keep.cards[0]!.id, rating: 3, reviewedAt: 1, durationMs: 1, deviceId: 'x', revokes: null }, addUser(db));
     regenerateDeck(db, deck.id);
     expect(repo.listNotes(db, { deckId: deck.id }).map((n) => n.id)).toEqual([keep.id]);
     expect(repo.getDeck(db, deck.id)!.summary).toBeNull();

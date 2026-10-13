@@ -8,7 +8,7 @@ import { addDevice, createUser } from '../src/accounts.ts';
 import { buildApp } from '../src/app.ts';
 import type { Config } from '../src/config.ts';
 import * as repo from '../src/repo.ts';
-import { memDb } from './helpers.ts';
+import { addUser, memDb } from './helpers.ts';
 import { makePdf } from './makePdf.ts';
 
 async function setup(opts: { webDir?: boolean } = {}) {
@@ -76,8 +76,8 @@ describe('HTTP-API', () => {
   });
 
   it('nimmt PDFs an, überspringt Duplikate und Nicht-PDFs', async () => {
-    const { app, db, cfg, woke } = await setup();
-    const mod = repo.createModule(db, { name: 'M', language: 'en' });
+    const { app, db, cfg, woke, user } = await setup();
+    const mod = repo.createModule(db, { name: 'M', language: 'en', createdBy: user.id });
     const pdf = makePdf(['One']);
     const first = await app.inject({ method: 'POST', url: `/api/modules/${mod.id}/upload`, ...multipart([{ name: 'Ch1.pdf', data: pdf }, { name: 'notes.txt', data: Buffer.from('x') }]) });
     expect(first.statusCode).toBe(200);
@@ -94,12 +94,12 @@ describe('HTTP-API', () => {
   });
 
   it('Neu erzeugen mit includeReviewed löscht auch gelernte Karten', async () => {
-    const { app, db } = await setup();
-    const mod = repo.createModule(db, { name: 'M', language: 'en' });
+    const { app, db, user } = await setup();
+    const mod = repo.createModule(db, { name: 'M', language: 'en', createdBy: user.id });
     const deck = repo.createDeck(db, { moduleId: mod.id, title: 'D', pdfSha256: 's' });
     repo.updateDeck(db, deck.id, { pageCount: 3, summary: 'alt' });
     const { cards } = repo.insertNote(db, { deckId: deck.id, kind: 'qa', front: 'Q', back: 'A', slideRefs: [1], frontImagePage: null, tags: [], source: 'chunk', position: 0 });
-    repo.insertRevlog(db, { id: 'r', cardId: cards[0]!.id, rating: 3, reviewedAt: 1, durationMs: 1, deviceId: 'x', revokes: null });
+    repo.insertRevlog(db, { id: 'r', cardId: cards[0]!.id, rating: 3, reviewedAt: 1, durationMs: 1, deviceId: 'x', revokes: null }, user.id);
     const r = await app.inject({ method: 'POST', url: `/api/decks/${deck.id}/regenerate`, payload: { includeReviewed: true } });
     expect(r.statusCode).toBe(200);
     expect(repo.listNotes(db, { deckId: deck.id })).toHaveLength(0);
@@ -109,8 +109,8 @@ describe('HTTP-API', () => {
   });
 
   it('POST /api/sync validiert und liefert Pull-Daten', async () => {
-    const { app, db } = await setup();
-    repo.createModule(db, { name: 'M', language: 'en' });
+    const { app, db, user } = await setup();
+    repo.createModule(db, { name: 'M', language: 'en', createdBy: user.id });
     const bad = await app.inject({ method: 'POST', url: '/api/sync', payload: { deviceId: '', cursor: 0, push: {} } });
     expect(bad.statusCode).toBe(400);
     const ok = await app.inject({
@@ -122,8 +122,8 @@ describe('HTTP-API', () => {
   });
 
   it('Lernablauf: nächste Karte, bewerten, rückgängig', async () => {
-    const { app, db } = await setup();
-    const mod = repo.createModule(db, { name: 'M', language: 'en' });
+    const { app, db, user } = await setup();
+    const mod = repo.createModule(db, { name: 'M', language: 'en', createdBy: user.id });
     const deck = repo.createDeck(db, { moduleId: mod.id, title: 'D', pdfSha256: 's' });
     repo.insertNote(db, { deckId: deck.id, kind: 'qa', front: 'Q', back: 'A', slideRefs: [1], frontImagePage: null, tags: [], source: 'chunk', position: 0 });
     const next = (await app.inject({ method: 'GET', url: `/api/study/next?moduleId=${mod.id}` })).json();
@@ -137,21 +137,21 @@ describe('HTTP-API', () => {
   });
 
   it('bearbeitet Notes und pausiert Karten', async () => {
-    const { app, db } = await setup();
-    const mod = repo.createModule(db, { name: 'M', language: 'en' });
+    const { app, db, user } = await setup();
+    const mod = repo.createModule(db, { name: 'M', language: 'en', createdBy: user.id });
     const deck = repo.createDeck(db, { moduleId: mod.id, title: 'D', pdfSha256: 's' });
     const { note, cards } = repo.insertNote(db, { deckId: deck.id, kind: 'cloze', front: '{{c1::A}}', back: '', slideRefs: [1], frontImagePage: null, tags: [], source: 'chunk', position: 0 });
     const upd = await app.inject({ method: 'PATCH', url: `/api/notes/${note.id}`, payload: { front: '{{c1::A}} {{c2::B}}' } });
     expect(upd.json().cards.filter((c: { deleted: boolean }) => !c.deleted)).toHaveLength(2);
     await app.inject({ method: 'POST', url: `/api/cards/${cards[0]!.id}/suspend`, payload: { suspended: true } });
-    expect(repo.getCard(db, cards[0]!.id)!.suspended).toBe(true);
+    expect(repo.studyRows(db, user.id).find((r) => r.cardId === cards[0]!.id)!.suspended).toBe(true);
     const list = await app.inject({ method: 'GET', url: `/api/notes?moduleId=${mod.id}&q=B` });
     expect(list.json()).toHaveLength(1);
   });
 
   it('liefert Folienbilder und lehnt ungültige Dateinamen ab', async () => {
-    const { app, db, cfg } = await setup();
-    const mod = repo.createModule(db, { name: 'M', language: 'en' });
+    const { app, db, cfg, user } = await setup();
+    const mod = repo.createModule(db, { name: 'M', language: 'en', createdBy: user.id });
     const deck = repo.createDeck(db, { moduleId: mod.id, title: 'D', pdfSha256: 's' });
     mkdirSync(path.join(cfg.dataDir, 'slides', deck.id), { recursive: true });
     writeFileSync(path.join(cfg.dataDir, 'slides', deck.id, '1.jpg'), Buffer.from([0xff, 0xd8, 0xff]));
@@ -254,8 +254,8 @@ describe('Anmeldung', () => {
   });
 
   it('Folienbilder mit Sitzung (Browser-img), ohne 401', async () => {
-    const { raw, db, cfg } = await setup();
-    const mod = repo.createModule(db, { name: 'M', language: 'en' });
+    const { raw, db, cfg, user } = await setup();
+    const mod = repo.createModule(db, { name: 'M', language: 'en', createdBy: user.id });
     const deck = repo.createDeck(db, { moduleId: mod.id, title: 'D', pdfSha256: 's' });
     mkdirSync(path.join(cfg.dataDir, 'slides', deck.id), { recursive: true });
     writeFileSync(path.join(cfg.dataDir, 'slides', deck.id, '1.jpg'), Buffer.from([0xff, 0xd8, 0xff]));
@@ -277,5 +277,30 @@ describe('Anmeldung', () => {
       payload: { deviceId: 'phone', cursor: 0, push: { modules: [], notes: [], cards: [], revlog: [] } },
     });
     expect(app.statusCode).toBe(200);
+  });
+});
+
+describe('Module für mehrere Personen', () => {
+  it('Anlegen macht zum Mitglied; Löschen nur, wenn niemand sonst das Modul hat', async () => {
+    const { app, db } = await setup();
+    const m = (await app.inject({ method: 'POST', url: '/api/modules', payload: { name: 'UI/UX', language: 'en' } })).json();
+    expect((await app.inject({ method: 'GET', url: `/api/modules/${m.id}` })).json()).toMatchObject({ mine: true, memberCount: 1 });
+    const other = addUser(db, 'mia');
+    repo.joinModule(db, other, m.id, 1);
+    const del = await app.inject({ method: 'DELETE', url: `/api/modules/${m.id}` });
+    expect(del.statusCode).toBe(409);
+    repo.leaveModule(db, other, m.id);
+    expect((await app.inject({ method: 'DELETE', url: `/api/modules/${m.id}` })).statusCode).toBe(200);
+  });
+  it('alle Module, beitreten, verlassen; persönliche Einstellungen nur als Mitglied', async () => {
+    const { app, db } = await setup();
+    const fremd = repo.createModule(db, { name: 'Fremd', language: 'de' });
+    expect((await app.inject({ method: 'GET', url: '/api/modules/all' })).json()).toMatchObject([{ name: 'Fremd', mine: false, memberCount: 0 }]);
+    expect((await app.inject({ method: 'PATCH', url: `/api/modules/${fremd.id}`, payload: { examDate: '2026-12-01' } })).statusCode).toBe(409);
+    expect((await app.inject({ method: 'POST', url: `/api/modules/${fremd.id}/join` })).statusCode).toBe(200);
+    const patched = await app.inject({ method: 'PATCH', url: `/api/modules/${fremd.id}`, payload: { examDate: '2026-12-01', name: 'Fremd 2' } });
+    expect(patched.json()).toMatchObject({ name: 'Fremd 2', examDate: '2026-12-01' });
+    expect((await app.inject({ method: 'POST', url: `/api/modules/${fremd.id}/leave` })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/api/overview' })).json().modules).toEqual([]);
   });
 });

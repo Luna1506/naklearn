@@ -25,31 +25,111 @@ export function listModules(db: Db): Module[] {
   return (db.prepare('SELECT * FROM module WHERE deleted = 0 ORDER BY name').all() as Row[]).map(toModule);
 }
 
+const toMyModule = (r: Row): Module => ({
+  ...toModule(r), examDate: r.ms_exam_date ?? null, newPerDay: r.ms_new_per_day, updatedAt: Math.max(r.updated_at, r.ms_updated_at),
+});
+
+const MY_MODULES = `SELECT m.*, ms.exam_date AS ms_exam_date, ms.new_per_day AS ms_new_per_day, ms.updated_at AS ms_updated_at
+  FROM module m JOIN membership ms ON ms.module_id = m.id AND ms.user_id = ? WHERE m.deleted = 0`;
+
+export function getMyModule(db: Db, userId: string, id: string): Module | undefined {
+  const r = db.prepare(`${MY_MODULES} AND m.id = ?`).get(userId, id) as Row | undefined;
+  return r && toMyModule(r);
+}
+
+export function listMyModules(db: Db, userId: string): Module[] {
+  return (db.prepare(`${MY_MODULES} ORDER BY m.name`).all(userId) as Row[]).map(toMyModule);
+}
+
+export interface ModuleListItem {
+  id: string;
+  name: string;
+  language: Language;
+  memberCount: number;
+  mine: boolean;
+}
+
+export function listAllModules(db: Db, userId: string): ModuleListItem[] {
+  return (db.prepare(
+    `SELECT m.id, m.name, m.language,
+            (SELECT COUNT(*) FROM membership ms WHERE ms.module_id = m.id) AS member_count,
+            EXISTS (SELECT 1 FROM membership ms WHERE ms.module_id = m.id AND ms.user_id = ?) AS mine
+     FROM module m WHERE m.deleted = 0 ORDER BY m.name`,
+  ).all(userId) as Row[]).map((r) => ({ id: r.id, name: r.name, language: r.language, memberCount: r.member_count, mine: !!r.mine }));
+}
+
+export function memberIds(db: Db, moduleId: string): string[] {
+  return (db.prepare('SELECT user_id FROM membership WHERE module_id = ?').all(moduleId) as Row[]).map((r) => r.user_id);
+}
+
 export function createModule(
   db: Db,
-  input: { name: string; language: Language; examDate?: string | null; newPerDay?: number },
+  input: { name: string; language: Language; examDate?: string | null; newPerDay?: number; createdBy?: string },
   now = Date.now(),
 ): Module {
   const id = newId();
-  db.prepare(
-    'INSERT INTO module (id, name, language, exam_date, new_per_day, updated_at, seq) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).run(id, input.name, input.language, input.examDate ?? null, input.newPerDay ?? 20, now, nextSeq(db));
-  return getModule(db, id)!;
+  return tx(db, () => {
+    db.prepare('INSERT INTO module (id, name, language, updated_at, seq) VALUES (?, ?, ?, ?, ?)').run(id, input.name, input.language, now, nextSeq(db));
+    if (input.createdBy) joinModule(db, input.createdBy, id, now, { examDate: input.examDate, newPerDay: input.newPerDay });
+    return getModule(db, id)!;
+  });
 }
 
-export function updateModule(
-  db: Db,
-  id: string,
-  patch: Partial<Pick<Module, 'name' | 'language' | 'examDate' | 'newPerDay'>>,
-  now = Date.now(),
-): Module {
+export function updateModule(db: Db, id: string, patch: Partial<Pick<Module, 'name' | 'language'>>, now = Date.now()): Module {
   const cur = getModule(db, id);
   if (!cur) throw new Error(`Modul ${id} nicht gefunden`);
   const next = { ...cur, ...patch };
-  db.prepare(
-    'UPDATE module SET name = ?, language = ?, exam_date = ?, new_per_day = ?, updated_at = ?, seq = ? WHERE id = ?',
-  ).run(next.name, next.language, next.examDate, next.newPerDay, now, nextSeq(db), id);
+  db.prepare('UPDATE module SET name = ?, language = ?, updated_at = ?, seq = ? WHERE id = ?').run(next.name, next.language, now, nextSeq(db), id);
   return getModule(db, id)!;
+}
+
+/** Neue seq für alle Zeilen eines Moduls: Geräte, die es gerade gewählt haben, laden auch den alten Inhalt. */
+export function bumpModuleContent(db: Db, moduleId: string): void {
+  tx(db, () => {
+    db.prepare('UPDATE module SET seq = ? WHERE id = ?').run(nextSeq(db), moduleId);
+    for (const d of db.prepare('SELECT id FROM deck WHERE module_id = ?').all(moduleId) as Row[]) {
+      db.prepare('UPDATE deck SET seq = ? WHERE id = ?').run(nextSeq(db), d.id);
+      for (const s of db.prepare('SELECT page FROM slide WHERE deck_id = ?').all(d.id) as Row[]) {
+        db.prepare('UPDATE slide SET seq = ? WHERE deck_id = ? AND page = ?').run(nextSeq(db), d.id, s.page);
+      }
+      for (const n of db.prepare('SELECT id FROM note WHERE deck_id = ?').all(d.id) as Row[]) {
+        db.prepare('UPDATE note SET seq = ? WHERE id = ?').run(nextSeq(db), n.id);
+        for (const c of db.prepare('SELECT id FROM card WHERE note_id = ?').all(n.id) as Row[]) {
+          db.prepare('UPDATE card SET seq = ? WHERE id = ?').run(nextSeq(db), c.id);
+        }
+      }
+    }
+  });
+}
+
+export function joinModule(
+  db: Db, userId: string, moduleId: string, now: number, settings: { examDate?: string | null; newPerDay?: number } = {},
+): void {
+  tx(db, () => {
+    const r = db.prepare(
+      'INSERT OR IGNORE INTO membership (user_id, module_id, exam_date, new_per_day, updated_at) VALUES (?, ?, ?, ?, ?) RETURNING user_id',
+    ).get(userId, moduleId, settings.examDate ?? null, settings.newPerDay ?? 20, now);
+    if (r) bumpModuleContent(db, moduleId);
+  });
+}
+
+export function leaveModule(db: Db, userId: string, moduleId: string): void {
+  tx(db, () => {
+    db.prepare('DELETE FROM membership WHERE user_id = ? AND module_id = ?').run(userId, moduleId);
+    db.prepare('UPDATE module SET seq = ? WHERE id = ?').run(nextSeq(db), moduleId);
+  });
+}
+
+export function updateMembership(
+  db: Db, userId: string, moduleId: string, patch: { examDate?: string | null; newPerDay?: number }, now: number,
+): void {
+  const cur = getMyModule(db, userId, moduleId);
+  if (!cur) throw new Error('Modul ist nicht in deinen Modulen');
+  tx(db, () => {
+    db.prepare('UPDATE membership SET exam_date = ?, new_per_day = ?, updated_at = ? WHERE user_id = ? AND module_id = ?')
+      .run(patch.examDate !== undefined ? patch.examDate : cur.examDate, patch.newPerDay ?? cur.newPerDay, now, userId, moduleId);
+    db.prepare('UPDATE module SET seq = ? WHERE id = ?').run(nextSeq(db), moduleId);
+  });
 }
 
 export function deleteModule(db: Db, id: string, now = Date.now()): void {
@@ -207,8 +287,14 @@ export function deleteNote(db: Db, id: string, now = Date.now()): void {
   });
 }
 
-export function setCardSuspended(db: Db, cardId: string, suspended: boolean, now = Date.now()): void {
-  db.prepare('UPDATE card SET suspended = ?, updated_at = ?, seq = ? WHERE id = ?').run(suspended ? 1 : 0, now, nextSeq(db), cardId);
+export function setCardFlag(db: Db, userId: string, cardId: string, suspended: boolean, now: number): void {
+  tx(db, () => {
+    db.prepare(
+      `INSERT INTO card_flag (user_id, card_id, suspended, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, card_id) DO UPDATE SET suspended = excluded.suspended, updated_at = excluded.updated_at`,
+    ).run(userId, cardId, suspended ? 1 : 0, now);
+    db.prepare('UPDATE card SET seq = ? WHERE id = ?').run(nextSeq(db), cardId);
+  });
 }
 
 export interface NoteListItem extends Note {
@@ -218,7 +304,7 @@ export interface NoteListItem extends Note {
 
 export function listNotes(
   db: Db,
-  filter: { deckId?: string; moduleId?: string; q?: string; kind?: NoteKind; limit?: number },
+  filter: { deckId?: string; moduleId?: string; q?: string; kind?: NoteKind; limit?: number; userId?: string },
 ): NoteListItem[] {
   const where = ['n.deleted = 0', 'd.deleted = 0'];
   const params: (string | number)[] = [];
@@ -226,12 +312,19 @@ export function listNotes(
   if (filter.moduleId) { where.push('d.module_id = ?'); params.push(filter.moduleId); }
   if (filter.kind) { where.push('n.kind = ?'); params.push(filter.kind); }
   if (filter.q) { where.push('(n.front LIKE ? OR n.back LIKE ?)'); params.push(`%${filter.q}%`, `%${filter.q}%`); }
+  if (filter.userId) { where.push('d.module_id IN (SELECT module_id FROM membership WHERE user_id = ?)'); params.push(filter.userId); }
   params.push(filter.limit ?? 500);
   const rows = db.prepare(
     `SELECT n.*, d.title AS deck_title FROM note n JOIN deck d ON d.id = n.deck_id
      WHERE ${where.join(' AND ')} ORDER BY d.position, n.position LIMIT ?`,
   ).all(...params) as Row[];
-  return rows.map((r) => ({ ...toNote(r), deckTitle: r.deck_title, cards: listCardsOfNote(db, r.id).filter((c) => !c.deleted) }));
+  const flags = (cardId: string) => filter.userId
+    ? !!(db.prepare('SELECT suspended FROM card_flag WHERE user_id = ? AND card_id = ?').get(filter.userId, cardId) as Row | undefined)?.suspended
+    : false;
+  return rows.map((r) => ({
+    ...toNote(r), deckTitle: r.deck_title,
+    cards: listCardsOfNote(db, r.id).filter((c) => !c.deleted).map((c) => ({ ...c, suspended: flags(c.id) })),
+  }));
 }
 
 export function countNotes(db: Db, deckId: string): number {
@@ -249,12 +342,17 @@ export function unreviewedNoteIds(db: Db, deckId: string): string[] {
 // ---------- Bewertungen und Zustand ----------
 
 
-export function insertRevlog(db: Db, e: RevlogEntry): void {
+export function insertRevlog(db: Db, e: RevlogEntry, userId: string): void {
   const exists = db.prepare('SELECT 1 FROM revlog WHERE id = ?').get(e.id);
   if (exists) return;
   db.prepare(
-    'INSERT INTO revlog (id, card_id, rating, reviewed_at, duration_ms, device_id, revokes, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-  ).run(e.id, e.cardId, e.rating, e.reviewedAt, e.durationMs, e.deviceId, e.revokes, nextSeq(db));
+    'INSERT INTO revlog (id, card_id, rating, reviewed_at, duration_ms, device_id, revokes, seq, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(e.id, e.cardId, e.rating, e.reviewedAt, e.durationMs, e.deviceId, e.revokes, nextSeq(db), userId);
+}
+
+export function revlogOwner(db: Db, id: string): string | null {
+  const r = db.prepare('SELECT user_id FROM revlog WHERE id = ?').get(id) as Row | undefined;
+  return r?.user_id ?? null;
 }
 
 export function getRevlog(db: Db, id: string): RevlogEntry | undefined {
@@ -262,29 +360,31 @@ export function getRevlog(db: Db, id: string): RevlogEntry | undefined {
   return r && toRevlog(r);
 }
 
-export function listRevlogForCard(db: Db, cardId: string): RevlogEntry[] {
-  return (db.prepare('SELECT * FROM revlog WHERE card_id = ?').all(cardId) as Row[]).map(toRevlog);
+export function listRevlogForCard(db: Db, userId: string, cardId: string): RevlogEntry[] {
+  return (db.prepare('SELECT * FROM revlog WHERE user_id = ? AND card_id = ?').all(userId, cardId) as Row[]).map(toRevlog);
 }
 
-export function saveCardState(db: Db, cardId: string, state: CardState, firstReviewedAt: number | null): void {
+export function saveCardState(db: Db, userId: string, cardId: string, state: CardState, firstReviewedAt: number | null): void {
   db.prepare(
-    `INSERT INTO card_state (card_id, json, first_reviewed_at) VALUES (?, ?, ?)
-     ON CONFLICT(card_id) DO UPDATE SET json = excluded.json, first_reviewed_at = excluded.first_reviewed_at`,
-  ).run(cardId, JSON.stringify(state), firstReviewedAt);
+    `INSERT INTO user_card_state (user_id, card_id, json, first_reviewed_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id, card_id) DO UPDATE SET json = excluded.json, first_reviewed_at = excluded.first_reviewed_at`,
+  ).run(userId, cardId, JSON.stringify(state), firstReviewedAt);
 }
 
-/** Alle lernbaren Karten (nicht gelöscht, Note/Deck/Modul nicht gelöscht). */
-export function studyRows(db: Db): QueueCard[] {
+/** Alle lernbaren Karten der eigenen Module (nicht gelöscht, Note/Deck/Modul nicht gelöscht). */
+export function studyRows(db: Db, userId: string): QueueCard[] {
   const rows = db.prepare(
-    `SELECT c.id AS card_id, c.ordinal, c.suspended, n.id AS note_id, n.position AS note_pos,
+    `SELECT c.id AS card_id, c.ordinal, COALESCE(f.suspended, 0) AS suspended, n.id AS note_id, n.position AS note_pos,
             d.id AS deck_id, d.position AS deck_pos, d.module_id, s.json, s.first_reviewed_at
      FROM card c
      JOIN note n ON n.id = c.note_id
      JOIN deck d ON d.id = n.deck_id
      JOIN module m ON m.id = d.module_id
-     LEFT JOIN card_state s ON s.card_id = c.id
+     JOIN membership ms ON ms.module_id = m.id AND ms.user_id = ?
+     LEFT JOIN user_card_state s ON s.card_id = c.id AND s.user_id = ?
+     LEFT JOIN card_flag f ON f.card_id = c.id AND f.user_id = ?
      WHERE c.deleted = 0 AND n.deleted = 0 AND d.deleted = 0 AND m.deleted = 0`,
-  ).all() as Row[];
+  ).all(userId, userId, userId) as Row[];
   return rows.map((r) => ({
     cardId: r.card_id,
     noteId: r.note_id,
@@ -297,10 +397,10 @@ export function studyRows(db: Db): QueueCard[] {
   }));
 }
 
-/** Zeitpunkte aller gültigen Bewertungen (für Serie/heute gelernt). */
-export function allReviewTimes(db: Db): number[] {
+/** Zeitpunkte aller gültigen Bewertungen einer Person (für Serie/heute gelernt). */
+export function allReviewTimes(db: Db, userId: string): number[] {
   return (db.prepare(
-    `SELECT reviewed_at FROM revlog r WHERE rating >= 1
+    `SELECT reviewed_at FROM revlog r WHERE r.user_id = ? AND rating >= 1
      AND NOT EXISTS (SELECT 1 FROM revlog u WHERE u.revokes = r.id)`,
-  ).all() as Row[]).map((r) => r.reviewed_at);
+  ).all(userId) as Row[]).map((r) => r.reviewed_at);
 }
