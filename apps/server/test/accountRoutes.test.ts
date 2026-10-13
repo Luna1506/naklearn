@@ -51,6 +51,13 @@ describe('Login im Browser', () => {
     for (let i = 0; i < 2; i++) await app.inject({ method: 'POST', url: '/api/device/login', payload: { name: 'Luna', password: 'x' } });
     expect((await app.inject({ method: 'POST', url: '/api/login', payload: { name: 'Luna', password: 'luna-pass-1' } })).statusCode).toBe(429);
   });
+  it('erfolgreicher Login einer anderen Person setzt die Bremse nicht zurück', async () => {
+    const { app } = setup();
+    for (let i = 0; i < 4; i++) await app.inject({ method: 'POST', url: '/api/login', payload: { name: 'Luna', password: 'x' } });
+    expect((await login(app, 'Mia', 'mia-pass-1')).r.statusCode).toBe(200);
+    await app.inject({ method: 'POST', url: '/api/login', payload: { name: 'Luna', password: 'x' } });
+    expect((await app.inject({ method: 'POST', url: '/api/login', payload: { name: 'Luna', password: 'luna-pass-1' } })).statusCode).toBe(429);
+  });
   it('Passwort ändern beendet alte Sitzungen, die aktuelle bekommt ein neues Cookie', async () => {
     const { app } = setup();
     const first = (await login(app, 'Mia', 'mia-pass-1')).cookie;

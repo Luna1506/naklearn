@@ -48,7 +48,6 @@ export function registerAccountRoutes(
       void reply.code(401).send({ error: WRONG });
       return null;
     }
-    limiter.reset(ip);
     return user;
   }
 
