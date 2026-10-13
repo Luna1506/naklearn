@@ -34,8 +34,7 @@ Ranglisten, iOS-App, Offline in der Website, Änderungen an Lernlogik oder Erzeu
 
 ## 2. Datenmodell
 
-Neue Migration (Index 2) in `packages/core/src/migrations.ts`. Server und Handy teilen
-die Migrationen; die neuen Tabellen nutzt nur der Server (wie `job`).
+Eigene serverseitige Migrationen (`SERVER_MIGRATIONS` in `apps/server/src/db.ts`, Version in `meta.server_version`); die `core`-Migrationen laufen auch auf dem Handy und bleiben unverändert. Der persönliche Kartenstand liegt in der neuen Tabelle `user_card_state` (`card_state` bleibt für das Handy).
 
 ```sql
 CREATE TABLE user (
@@ -62,7 +61,10 @@ CREATE TABLE invite (
 );
 ALTER TABLE revlog ADD COLUMN user_id TEXT;
 CREATE INDEX revlog_user_card ON revlog(user_id, card_id);
--- card_state wird mit Schlüssel (user_id, card_id) neu angelegt (alte Zeilen → Lunas Konto, s. §3)
+CREATE TABLE user_card_state (
+  user_id TEXT NOT NULL, card_id TEXT NOT NULL, json TEXT NOT NULL, first_reviewed_at INTEGER,
+  PRIMARY KEY (user_id, card_id)
+);
 ```
 
 - `module.exam_date` / `module.new_per_day` und `card.suspended` werden nicht mehr
