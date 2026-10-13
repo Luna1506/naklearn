@@ -1,7 +1,7 @@
 import { studyDay } from '@naklearn/core';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { addDevice, createUser } from './accounts.ts';
+import { AccountError, addDevice, createUser } from './accounts.ts';
 import { tx, type Db } from './db.ts';
 
 /**
@@ -24,7 +24,15 @@ export function bootstrapAccounts(
   }
   const password = o.password;
   tx(db, () => {
-    const admin = createUser(db, { name: o.adminName, password, isAdmin: true, now: o.now });
+    let admin;
+    try {
+      admin = createUser(db, { name: o.adminName, password, isAdmin: true, now: o.now });
+    } catch (e) {
+      // Klare Meldung, welche Umgebungsvariable zu korrigieren ist
+      if (!(e instanceof AccountError)) throw e;
+      const v = e.message.startsWith('Name') ? 'NAKLEARN_ADMIN' : 'NAKLEARN_PASSWORD';
+      throw new Error(`Erststart: ${v} ungültig – ${e.message}`);
+    }
     db.prepare('UPDATE revlog SET user_id = ? WHERE user_id IS NULL').run(admin.id);
     db.prepare('INSERT INTO user_card_state (user_id, card_id, json, first_reviewed_at) SELECT ?, card_id, json, first_reviewed_at FROM card_state')
       .run(admin.id);

@@ -65,4 +65,17 @@ describe('bootstrapAccounts', () => {
     expect(() => bootstrapAccounts(db, { adminName: 'luna', password: null, legacyToken: null, backupDir: backupDir(), now: NOW }))
       .toThrow(/NAKLEARN_PASSWORD/);
   });
+
+  it('zu kurzes Passwort: Meldung nennt NAKLEARN_PASSWORD, kein Konto entsteht', () => {
+    const { db } = legacy();
+    expect(() => bootstrapAccounts(db, { adminName: 'luna', password: 'kurz', legacyToken: null, backupDir: backupDir(), now: NOW }))
+      .toThrow(/NAKLEARN_PASSWORD.*8 Zeichen/);
+    expect(listUsers(db)).toHaveLength(0);
+  });
+
+  it('ungültiger Admin-Name: Meldung nennt NAKLEARN_ADMIN', () => {
+    const db = memDb();
+    expect(() => bootstrapAccounts(db, { adminName: 'l', password: 'altesPasswort', legacyToken: null, backupDir: backupDir(), now: NOW }))
+      .toThrow(/NAKLEARN_ADMIN/);
+  });
 });
