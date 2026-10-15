@@ -8,6 +8,7 @@
     "build": "vite build",
     "test": "vitest run",
     "android:sync": "vite build && cap sync android",
+    "ios:sync": "vite build && cap sync ios",
     "android:build": "npm run android:sync && cd android && ./gradlew assembleDebug --no-daemon",
     "android:install": "adb install -r android/app/build/outputs/apk/debug/app-debug.apk"
   },
@@ -18,6 +19,7 @@
     "@capacitor/core": "^8.5.2",
     "@capacitor/file-transfer": "^2.0.6",
     "@capacitor/filesystem": "^8.1.4",
+    "@capacitor/ios": "^8.5.2",
     "@naklearn/core": "*",
     "@naklearn/store": "*",
     "@naklearn/ui": "*",
