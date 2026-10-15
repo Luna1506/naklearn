@@ -1,0 +1,169 @@
+name: iOS (SideStore)
+
+# Baut zu jedem GitHub-Release eine unsignierte ipa (SideStore signiert sie auf dem iPhone mit der eigenen Apple-ID),
+# hängt sie an das Release und veröffentlicht sie samt source.json unter https://naklearn.torte-tech.de/ios/.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release-Tag (z. B. v0.3.1) oder "latest"'
+        required: false
+        default: latest
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  PUBLIC_BASE: https://naklearn.torte-tech.de/ios
+
+jobs:
+  build:
+    # macOS-Minuten zählen im privaten Repo 10-fach: nur das Nötigste hier, Veröffentlichen läuft auf Ubuntu.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Tag bestimmen
+        id: tag
+        run: |
+          tag="${{ github.event.release.tag_name || inputs.tag }}"
+          if [ -z "$tag" ] || [ "$tag" = latest ]; then
+            tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "Baue $tag"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: iOS-Projekt für Releases vor der iOS-Unterstützung
+        run: |
+          if [ ! -d apps/client/ios ]; then
+            echo "::notice::${{ steps.tag.outputs.tag }} enthält noch kein iOS-Projekt – nehme es (samt Client-Abhängigkeiten) von $GITHUB_SHA"
+            git fetch --depth 1 origin "$GITHUB_SHA"
+            git checkout "$GITHUB_SHA" -- apps/client/ios apps/client/package.json package-lock.json scripts/ios-source.ts scripts/release.ts
+          fi
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Web-Client bauen und in das iOS-Projekt kopieren
+        run: |
+          npm ci --no-audit --no-fund
+          npm run ios:sync -w @naklearn/client
+
+      - name: Swift-Pakete aus dem Cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/spm
+          key: spm-${{ hashFiles('apps/client/ios/App/CapApp-SPM/Package.swift', 'package-lock.json') }}
+          restore-keys: spm-
+
+      - name: Archiv bauen (ohne Signatur)
+        run: |
+          xcodebuild -version
+          build="$(node scripts/ios-source.ts build-number "${{ steps.tag.outputs.version }}")"
+          xcodebuild archive \
+            -project apps/client/ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" \
+            -quiet \
+            MARKETING_VERSION="${{ steps.tag.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="$build" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+      - name: ipa packen und an das Release hängen
+        run: |
+          ipa="NAKLearn-${{ steps.tag.outputs.version }}.ipa"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app" "$RUNNER_TEMP/ipa/Payload/"
+          plutil -p "$RUNNER_TEMP/ipa/Payload/App.app/Info.plist" | grep -E 'CFBundle(Identifier|ShortVersionString|Version)"'
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/$ipa" Payload)
+          ls -l "$ipa"
+          gh release upload "${{ steps.tag.outputs.tag }}" "$ipa" --clobber --repo "$GITHUB_REPOSITORY"
+
+  publish:
+    # Nur das neueste Release wird zur SideStore-Quelle (ältere Tags per Hand bauen ändert nichts für die iPhones).
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.build.outputs.tag }}
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Ist das das neueste Release?
+        id: latest
+        run: |
+          latest="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)"
+          if [ "$latest" = "$TAG" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "::notice::$TAG ist nicht das neueste Release ($latest) – Quelle bleibt unverändert"; fi
+
+      - name: Checkout
+        if: steps.latest.outputs.ok == 'true'
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts
+            apps/client/ios/App/App/Assets.xcassets/AppIcon.appiconset
+
+      - name: Node
+        if: steps.latest.outputs.ok == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: source.json erzeugen
+        if: steps.latest.outputs.ok == 'true'
+        run: |
+          mkdir -p out
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p "NAKLearn-$VERSION.ipa" -O out/NAKLearn.ipa
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body > notes.md
+          cp apps/client/ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png out/icon.png
+          node scripts/ios-source.ts source --version "$VERSION" --size "$(stat -c %s out/NAKLearn.ipa)" \
+            --base "$PUBLIC_BASE" --notes notes.md > out/source.json
+          jq -e '.apps[0].versions[0].version == env.VERSION' out/source.json
+          ls -l out
+
+      - name: Auf torte veröffentlichen (nur <data>/ios im Container)
+        if: steps.latest.outputs.ok == 'true'
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          remote() { ssh -i ~/.ssh/deploy_key -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new -o BatchMode=yes "$SSH_USER@$SSH_HOST" "$@"; }
+          # Jede Datei atomar ersetzen; source.json zuletzt, damit sie nie auf eine fehlende ipa zeigt.
+          for f in NAKLearn.ipa icon.png source.json; do
+            remote "docker exec -i naklearn sh -c 'mkdir -p /data/ios && cat > /data/ios/.$f.tmp && mv /data/ios/.$f.tmp /data/ios/$f'" < "out/$f"
+          done
+          rm -f ~/.ssh/deploy_key
+
+      - name: Öffentliche Quelle prüfen
+        if: steps.latest.outputs.ok == 'true'
+        run: |
+          curl -fsS "$PUBLIC_BASE/source.json" | jq -e '.apps[0].versions[0].version == env.VERSION'
+          size="$(curl -fsSI "$PUBLIC_BASE/NAKLearn.ipa?v=$VERSION" | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}')"
+          test "$size" = "$(stat -c %s out/NAKLearn.ipa)"
+          echo "SideStore-Quelle: $PUBLIC_BASE/source.json"

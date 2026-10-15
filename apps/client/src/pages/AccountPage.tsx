@@ -66,7 +66,8 @@ export function AccountPage() {
         </table>
         <p className="muted small">
           Android: App „NAKLearn“ aus den GitHub-Releases (z. B. über Obtainium) installieren und dort mit Name und Passwort anmelden –
-          dann geht Lernen auch offline. iPhone: einfach diese Website im Browser nutzen.
+          dann geht Lernen auch offline. iPhone: App über SideStore mit der Quelle {location.origin}/ios/source.json installieren
+          oder einfach diese Website im Browser nutzen.
         </p>
       </section>
     </main>
