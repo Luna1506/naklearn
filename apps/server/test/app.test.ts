@@ -253,6 +253,24 @@ describe('Anmeldung', () => {
     expect(page.body).toContain('NAKLearn');
   });
 
+  it('iOS-Quelle für SideStore ohne Login unter /ios/', async () => {
+    const { raw, cfg } = await setup({ webDir: true });
+    expect((await raw.inject({ method: 'GET', url: '/ios/source.json' })).statusCode).toBe(404);
+    mkdirSync(path.join(cfg.dataDir, 'ios'));
+    writeFileSync(path.join(cfg.dataDir, 'ios', 'source.json'), '{"name":"NAKLearn","apps":[]}');
+    writeFileSync(path.join(cfg.dataDir, 'ios', 'NAKLearn.ipa'), 'PK-ipa');
+    const src = await raw.inject({ method: 'GET', url: '/ios/source.json' });
+    expect(src.statusCode).toBe(200);
+    expect(src.json()).toMatchObject({ name: 'NAKLearn' });
+    const ipa = await raw.inject({ method: 'GET', url: '/ios/NAKLearn.ipa?v=0.3.1' });
+    expect(ipa.statusCode).toBe(200);
+    expect(ipa.body).toBe('PK-ipa');
+    // nur dieses Verzeichnis, keine Daten daneben
+    expect((await raw.inject({ method: 'GET', url: '/ios/../config.json' })).statusCode).not.toBe(200);
+    expect((await raw.inject({ method: 'GET', url: '/ios/%2e%2e/config.json' })).statusCode).not.toBe(200);
+    expect((await raw.inject({ method: 'GET', url: '/' })).body).toContain('NAKLearn');
+  });
+
   it('Folienbilder mit Sitzung (Browser-img), ohne 401', async () => {
     const { raw, db, cfg, user } = await setup();
     const mod = repo.createModule(db, { name: 'M', language: 'en', createdBy: user.id });

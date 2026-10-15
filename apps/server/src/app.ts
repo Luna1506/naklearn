@@ -75,6 +75,8 @@ export function buildApp(deps: {
 
   app.register(multipart, { limits: { fileSize: 300 * 1024 * 1024, files: 50 } });
   if (cfg.webDir) app.register(fastifyStatic, { root: cfg.webDir, prefix: '/' });
+  // iOS-App für SideStore (source.json + ipa), öffentlich; der ios-Workflow legt die Dateien in <data>/ios ab.
+  app.register(fastifyStatic, { root: path.join(cfg.dataDir, 'ios'), prefix: '/ios/', decorateReply: false });
 
   app.addHook('onRequest', async (req, reply) => {
     // Hinter dem Proxy per http aufgerufen → auf die öffentliche https-Adresse umleiten.

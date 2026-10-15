@@ -43,7 +43,7 @@ function writeStored(dataDir: string, stored: Stored) {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const dataDir = path.resolve(env.NAKLEARN_DATA_DIR ?? path.join(os.homedir(), '.local/share/naklearn'));
-  for (const d of ['', 'pdfs', 'slides', 'backups']) mkdirSync(path.join(dataDir, d), { recursive: true });
+  for (const d of ['', 'pdfs', 'slides', 'backups', 'ios']) mkdirSync(path.join(dataDir, d), { recursive: true });
 
   const file = configFile(dataDir);
   const stored: Stored = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
