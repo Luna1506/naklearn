@@ -7,6 +7,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z, ZodError } from 'zod';
 import type { Db } from './db.ts';
+import { ChatInput, type Chat } from './chat.ts';
 import { enqueueDeck, enqueueGaps, listJobs, regenerateDeck, retryJob, type Worker } from './generation.ts';
 import * as repo from './repo.ts';
 import { answer, getNext, getOverview, undo } from './study.ts';
@@ -52,6 +53,8 @@ export function buildApp(deps: {
   db: Db;
   cfg: Config;
   worker: Pick<Worker, 'wake' | 'status' | 'resume'>;
+  /** KI-Chat zu Karten; ohne ist der Chat nicht verfügbar. */
+  chat?: Chat;
   now?: () => number;
 }): FastifyInstance {
   const { db, cfg, worker } = deps;
@@ -292,6 +295,14 @@ export function buildApp(deps: {
     const { suspended } = z.object({ suspended: z.boolean() }).parse(req.body);
     repo.setCardFlag(db, me(req).id, id, suspended, now());
     return { ok: true };
+  });
+
+  app.post('/api/cards/:id/ask', async (req, reply) => {
+    const { id } = IdParam.parse(req.params);
+    if (!deps.chat) return reply.code(503).send({ error: 'Der KI-Chat ist auf diesem Server nicht eingerichtet.' });
+    const { messages } = ChatInput.parse(req.body);
+    const r = await deps.chat.ask(id, messages);
+    return r.ok ? { answer: r.answer } : reply.code(r.status).send({ error: r.error });
   });
 
   // ---- Lernen ----

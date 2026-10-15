@@ -18,6 +18,8 @@ process.stdin.on('end', () => {
       total_cost_usd: 0.0123,
       modelUsage: { 'claude-sonnet-5-5': {} },
     });
+  } else if (mode === 'text') {
+    env({ subtype: 'success', is_error: false, result: 'Antwort mit **Markdown**', usage: { input_tokens: 1, output_tokens: 2 } });
   } else if (mode === 'fenced') {
     env({ subtype: 'success', is_error: false, result: 'Hier:\n```json\n{"notes":[]}\n```' });
   } else if (mode === 'invalid') {

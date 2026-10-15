@@ -16,7 +16,8 @@ export type ClaudeResult =
 
 export interface ClaudeRequest {
   prompt: string;
-  jsonSchema: object;
+  /** Erwartetes JSON-Schema; ohne Schema (Textmodus) ist `output` die Antwort als Text. */
+  jsonSchema?: object;
   addDirs: string[];
   cwd: string;
   /** Modell-Alias oder -ID (z. B. "sonnet"); null/undefined = Standard des Accounts. */
@@ -44,7 +45,7 @@ function usageOf(env: any): ClaudeUsage | null {
   };
 }
 
-export function parseClaudeOutput(stdout: string): ClaudeResult {
+export function parseClaudeOutput(stdout: string, mode: 'json' | 'text' = 'json'): ClaudeResult {
   let env: any;
   try {
     env = JSON.parse(stdout.trim());
@@ -56,6 +57,7 @@ export function parseClaudeOutput(stdout: string): ClaudeResult {
     return { ok: false, kind: classifyError(`${msg} ${env.api_error_status ?? ''}`), message: msg.slice(0, 500) };
   }
   const usage = usageOf(env);
+  if (mode === 'text') return { ok: true, output: String(env.result ?? ''), usage };
   if (env.structured_output !== undefined && env.structured_output !== null) return { ok: true, output: env.structured_output, usage };
   const text = String(env.result ?? '');
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
@@ -73,8 +75,8 @@ export function createClaudeRunner(opts: { claudePath: string }): RunClaude {
         '-p', '--output-format', 'json', '--no-session-persistence',
         '--tools', 'Read',
         '--strict-mcp-config', '--setting-sources', '',
-        '--json-schema', JSON.stringify(req.jsonSchema),
       ];
+      if (req.jsonSchema) args.push('--json-schema', JSON.stringify(req.jsonSchema));
       // Lesen nur in den Folienordnern erlauben (`//` = absoluter Pfad in Claude-Code-Regeln).
       for (const d of req.addDirs) args.push('--allowedTools', `Read(/${d.replace(/\/+$/, '')}/**)`, '--add-dir', d);
       if (req.model) args.push('--model', req.model);
@@ -95,7 +97,7 @@ export function createClaudeRunner(opts: { claudePath: string }): RunClaude {
       child.on('error', (e) => finish({ ok: false, kind: 'failed', message: `claude nicht startbar: ${e.message}` }));
       child.on('close', (code, signal) => {
         if (signal) return finish({ ok: false, kind: 'failed', message: `claude abgebrochen (${signal}) – Timeout?` });
-        const r = parseClaudeOutput(out);
+        const r = parseClaudeOutput(out, req.jsonSchema ? 'json' : 'text');
         if (!r.ok && code !== 0 && err.trim() && r.kind === 'failed') {
           return finish({ ok: false, kind: classifyError(err), message: err.slice(0, 500) });
         }

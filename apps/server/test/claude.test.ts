@@ -14,12 +14,13 @@ afterEach(() => {
   delete process.env.FAKE_CLAUDE_LOG;
 });
 
-async function call(mode: string) {
+async function call(mode: string, opts: { text?: boolean } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), 'naklearn-claude-'));
   process.env.FAKE_CLAUDE_MODE = mode;
   process.env.FAKE_CLAUDE_LOG = path.join(dir, 'log.jsonl');
   const run = createClaudeRunner({ claudePath: FAKE });
-  const res = await run({ prompt: 'PROMPT-TEXT', jsonSchema: { type: 'object' }, addDirs: ['/slides/x'], cwd: dir, model: 'sonnet' });
+  const schema = opts.text ? {} : { jsonSchema: { type: 'object' } };
+  const res = await run({ prompt: 'PROMPT-TEXT', ...schema, addDirs: ['/slides/x'], cwd: dir, model: 'sonnet' });
   const log = JSON.parse(readFileSync(process.env.FAKE_CLAUDE_LOG, 'utf8').trim().split('\n')[0]!);
   return { res, log };
 }
@@ -33,6 +34,14 @@ describe('createClaudeRunner', () => {
     expect(log.argv).toEqual(expect.arrayContaining(['-p', '--output-format', 'json', '--json-schema', '--add-dir', '/slides/x', '--model', 'sonnet']));
     expect(log.argv[log.argv.indexOf('--tools') + 1]).toBe('Read');
     expect(log.argv[log.argv.indexOf('--allowedTools') + 1]).toBe('Read(//slides/x/**)');
+  });
+  it('Textmodus ohne Schema liefert die Antwort als Text', async () => {
+    const { res, log } = await call('text', { text: true });
+    expect(res).toMatchObject({ ok: true, output: 'Antwort mit **Markdown**' });
+    expect(log.argv).not.toContain('--json-schema');
+  });
+  it('Textmodus meldet Rate-Limits weiterhin', async () => {
+    expect((await call('ratelimit', { text: true })).res).toMatchObject({ ok: false, kind: 'rate_limit' });
   });
   it('akzeptiert einen ```json-Block als Fallback', async () => {
     expect((await call('fenced')).res).toMatchObject({ ok: true, output: { notes: [] } });

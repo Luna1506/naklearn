@@ -2,6 +2,7 @@ import path from 'node:path';
 import { buildApp } from './app.ts';
 import { backupIfDue } from './backup.ts';
 import { bootstrapAccounts } from './bootstrap.ts';
+import { createChat } from './chat.ts';
 import { createClaudeRunner } from './claude.ts';
 import { loadConfig } from './config.ts';
 import { openDb } from './db.ts';
@@ -16,10 +17,11 @@ const boot = bootstrapAccounts(db, {
 });
 if (boot.created) console.log(`[naklearn] Konto „${cfg.adminName}“ angelegt${boot.backup ? ` (Sicherung: ${boot.backup})` : ''}`);
 
+const runClaude = createClaudeRunner({ claudePath: cfg.claudePath });
 const worker = createWorker({
   db,
   dataDir: cfg.dataDir,
-  runClaude: createClaudeRunner({ claudePath: cfg.claudePath }),
+  runClaude,
   summaryModel: cfg.summaryModel,
   cardsModel: cfg.cardsModel,
 });
@@ -36,7 +38,9 @@ const backup = () => {
 backup();
 setInterval(backup, 3_600_000).unref();
 
-const app = buildApp({ db, cfg, worker });
+// Chat mit dem günstigen Modell (Sonnet), unabhängig von der Erzeugungs-Warteschlange.
+const chat = createChat({ db, dataDir: cfg.dataDir, runClaude, model: cfg.summaryModel });
+const app = buildApp({ db, cfg, worker, chat });
 await app.listen({ port: cfg.port, host: cfg.host });
 console.log(`[naklearn] läuft auf http://localhost:${cfg.port} (Daten: ${cfg.dataDir}, Web: ${cfg.webDir ?? 'kein Build'})`);
 

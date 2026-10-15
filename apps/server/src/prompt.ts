@@ -1,4 +1,4 @@
-import { CardsOutputSchema, SummaryOutputSchema, TranslationOutputSchema, type Language, type NoteKind } from '@naklearn/core';
+import { CardsOutputSchema, SummaryOutputSchema, TranslationOutputSchema, type Language, type Note, type NoteKind } from '@naklearn/core';
 import { z } from 'zod';
 
 /** JSON-Schema ohne `$schema`-Angabe: claude validiert nur gegen seinen Standard-Draft. */
@@ -187,5 +187,43 @@ Cards:
 ${items}
 
 Return JSON matching the given schema: {"items": [{"n": <number>, "front": "...", "back": "..."}]} with one item per card.`;
+}
+
+export interface ChatPromptInput {
+  moduleName: string;
+  deckTitle: string;
+  note: Pick<Note, 'kind' | 'front' | 'back' | 'frontDe' | 'backDe'>;
+  slides: { page: number; text: string; imagePath: string }[];
+  messages: { role: 'user' | 'assistant'; content: string }[];
+}
+
+export function buildChatPrompt(i: ChatPromptInput): string {
+  const german = i.note.frontDe !== null ? `\n\nGerman version:\nFRONT:\n${i.note.frontDe}\nBACK:\n${i.note.backDe || '(empty)'}` : '';
+  const slides = i.slides.length
+    ? i.slides.map((s) => `=== Slide ${s.page} (image: ${s.imagePath}) ===\n${s.text || '(no extractable text)'}`).join('\n\n')
+    : '(none)';
+  const history = i.messages.map((m) => `${m.role === 'user' ? 'STUDENT' : 'TUTOR'}: ${m.content}`).join('\n\n');
+  return `You are a patient tutor helping a student understand one flashcard while studying for an exam.
+
+Module: "${i.moduleName}" · Lecture: "${i.deckTitle}"
+
+Flashcard (${i.note.kind}${i.note.kind === 'cloze' ? ', {{cN::…}} marks the hidden terms' : ''}):
+FRONT:
+${i.note.front}
+BACK:
+${i.note.back || '(empty)'}${german}
+
+Lecture slides this card is based on (open an image with the Read tool only if the figure matters for the question):
+${slides}
+
+Conversation so far:
+
+${history}
+
+Answer the student's last message as the TUTOR. Rules:
+- Write in German; give technical terms also in English in parentheses where the slides use English.
+- Be concise and exam-focused: explain the idea, give a short example or comparison if it helps; stick to what the slides and well-established knowledge say.
+- If the question goes beyond the slides, say so briefly before answering.
+- Markdown allowed. Reply with the answer text only.`;
 }
 
