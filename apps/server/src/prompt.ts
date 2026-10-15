@@ -1,4 +1,4 @@
-import { CardsOutputSchema, SummaryOutputSchema, type Language } from '@naklearn/core';
+import { CardsOutputSchema, SummaryOutputSchema, TranslationOutputSchema, type Language, type NoteKind } from '@naklearn/core';
 import { z } from 'zod';
 
 /** JSON-Schema ohne `$schema`-Angabe: claude validiert nur gegen seinen Standard-Draft. */
@@ -9,6 +9,7 @@ function jsonSchemaOf(schema: z.ZodType): object {
 
 export const summaryJsonSchema: object = jsonSchemaOf(SummaryOutputSchema);
 export const cardsJsonSchema: object = jsonSchemaOf(CardsOutputSchema);
+export const translateJsonSchema: object = jsonSchemaOf(TranslationOutputSchema);
 
 /** Folien, die Claude als Bild ansehen darf. */
 export interface PromptFigure {
@@ -164,3 +165,27 @@ ${figureList(i.figures)}
 
 Return JSON matching the given schema: {"notes": [...]}.`;
 }
+
+export interface TranslatePromptInput {
+  deckTitle: string;
+  items: { n: number; kind: NoteKind; front: string; back: string }[];
+}
+
+export function buildTranslatePrompt(i: TranslatePromptInput): string {
+  const items = i.items.map((it) => `### ${it.n} (${it.kind})\nFRONT:\n${it.front}\nBACK:\n${it.back || '(empty)'}`).join('\n\n');
+  return `Translate these flashcards from the lecture "${i.deckTitle}" into German for a German student.
+
+Rules:
+- Translate front and back of every card; keep the meaning exact and the wording natural and concise.
+- Keep all Markdown (lists, bold, code, tables) and line breaks.
+- Cloze markers stay exactly in place: "{{c1::term}}" becomes "{{c1::Begriff}}" – same numbers, same count, translate only the text inside.
+- Technical terms: use the usual German term and give the English original in parentheses the first time it appears on a card, e.g. "Vertraulichkeit (confidentiality)". Keep terms that are normally used in English in German too (e.g. "Cloud", "Hypervisor", "Firewall") as they are.
+- An empty back stays empty.
+
+Cards:
+
+${items}
+
+Return JSON matching the given schema: {"items": [{"n": <number>, "front": "...", "back": "..."}]} with one item per card.`;
+}
+

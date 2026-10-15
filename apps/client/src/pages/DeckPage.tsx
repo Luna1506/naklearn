@@ -5,7 +5,7 @@ import { api, type Job, type JobUsage, type NoteListItem, type WorkerStatus } fr
 import { href, navigate } from '../router.ts';
 
 const KIND: Record<Job['kind'], string> = {
-  render: 'Folien lesen', summary: 'Zusammenfassen', cards: 'Karten erzeugen', gaps: 'Fehlende Karten ergänzen', chunk: 'Karten (altes Verfahren)', synthesis: 'Synthese (altes Verfahren)',
+  render: 'Folien lesen', summary: 'Zusammenfassen', cards: 'Karten erzeugen', gaps: 'Fehlende Karten ergänzen', translate: 'Übersetzen', chunk: 'Karten (altes Verfahren)', synthesis: 'Synthese (altes Verfahren)',
 };
 
 function usageText(u: JobUsage | null): string {

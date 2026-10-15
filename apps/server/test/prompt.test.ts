@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildCardsPrompt, buildGapsPrompt, buildSummaryPrompt, cardsJsonSchema, pickFigurePages, summaryJsonSchema } from '../src/prompt.ts';
+import {
+  buildCardsPrompt, buildGapsPrompt, buildSummaryPrompt, buildTranslatePrompt, cardsJsonSchema, pickFigurePages, summaryJsonSchema,
+  translateJsonSchema,
+} from '../src/prompt.ts';
 
 const slides = [
   { page: 1, text: 'Cloud Security\nCSE4059' },
@@ -39,6 +42,12 @@ describe('prompts', () => {
     expect(p).toContain('at most 5 new cards');
     expect(p).toContain('/s/3.jpg');
     expect(p).toMatch(/empty list/);
+  });
+  it('Übersetzungs-Prompt nummeriert die Karten und verlangt gleiche Lücken', () => {
+    const p = buildTranslatePrompt({ deckTitle: 'Week 1', items: [{ n: 1, kind: 'cloze', front: '{{c1::IaaS}} is a model', back: '' }] });
+    expect(p).toContain('### 1 (cloze)\nFRONT:\n{{c1::IaaS}} is a model\nBACK:\n(empty)');
+    expect(p).toMatch(/same numbers, same count/);
+    expect(JSON.stringify(translateJsonSchema)).toContain('"items"');
   });
   it('JSON-Schemas ohne $schema', () => {
     expect(JSON.stringify(summaryJsonSchema)).toContain('"summary"');

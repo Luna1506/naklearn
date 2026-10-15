@@ -17,7 +17,11 @@ export const CardsOutputSchema = z.object({
   notes: z.array(GeneratedNoteSchema),
 });
 
+export const TranslationOutputSchema = z.object({
+  items: z.array(z.object({ n: z.number().int(), front: z.string(), back: z.string() })),
+});
 
 export type GeneratedNote = z.infer<typeof GeneratedNoteSchema>;
 export type SummaryOutput = z.infer<typeof SummaryOutputSchema>;
 export type CardsOutput = z.infer<typeof CardsOutputSchema>;
+export type TranslationOutput = z.infer<typeof TranslationOutputSchema>;

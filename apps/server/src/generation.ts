@@ -1,5 +1,5 @@
 import {
-  CardsOutputSchema, SummaryOutputSchema, clozeOrdinals, limitClozeGaps, newId,
+  CardsOutputSchema, SummaryOutputSchema, TranslationOutputSchema, clozeOrdinals, limitClozeGaps, newId,
   type GeneratedNote, type NoteKind,
 } from '@naklearn/core';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -8,7 +8,10 @@ import path from 'node:path';
 import type { ClaudeResult, ClaudeUsage, RunClaude } from './claude.ts';
 import { tx, type Db } from './db.ts';
 import { renderPdf, type RenderedSlide } from './pdf.ts';
-import { buildCardsPrompt, buildGapsPrompt, buildSummaryPrompt, cardsJsonSchema, pickFigurePages, summaryJsonSchema } from './prompt.ts';
+import {
+  buildCardsPrompt, buildGapsPrompt, buildSummaryPrompt, buildTranslatePrompt, cardsJsonSchema, pickFigurePages, summaryJsonSchema,
+  translateJsonSchema,
+} from './prompt.ts';
 import * as repo from './repo.ts';
 
 export const MAX_ATTEMPTS = 3;
@@ -18,12 +21,16 @@ export const CARDS_PER_SLIDE = 1.25;
 export const MAX_CARDS_PER_SLIDE = 2;
 export const MAX_CLOZE_GAPS = 2;
 export const MAX_FIGURES = 5;
+/** Karten pro Übersetzungsaufruf. */
+export const TRANSLATE_BATCH = 60;
+/** So oft sieht der untätige Worker nach fehlenden Übersetzungen. */
+export const TRANSLATE_SCAN_MS = 60_000;
 
 export interface Job {
   id: string;
   deckId: string;
-  /** 'gaps' ergänzt fehlende Karten. 'chunk'/'synthesis' stammen aus dem alten Verfahren und werden nicht mehr ausgeführt. */
-  kind: 'render' | 'summary' | 'cards' | 'gaps' | 'chunk' | 'synthesis';
+  /** 'gaps' ergänzt fehlende Karten, 'translate' schreibt die deutsche Fassung. 'chunk'/'synthesis' stammen aus dem alten Verfahren. */
+  kind: 'render' | 'summary' | 'cards' | 'gaps' | 'translate' | 'chunk' | 'synthesis';
   chunkFrom: number | null;
   chunkTo: number | null;
   status: 'queued' | 'running' | 'done' | 'failed';
@@ -105,11 +112,29 @@ export function enqueueGaps(db: Db, deckId: string, now = Date.now()): boolean {
   return true;
 }
 
+/**
+ * Reiht pro englischem Foliensatz einen Übersetzungs-Job ein, wenn es eine unübersetzte Karte gibt, die nach dem letzten
+ * Übersetzungs-Job entstand oder geändert wurde. Verworfene Übersetzungen und fehlgeschlagene Jobs werden so nicht endlos
+ * wiederholt. Liefert die Zahl neuer Jobs.
+ */
+export function enqueueMissingTranslations(db: Db, now = Date.now()): number {
+  const decks = db.prepare(
+    `SELECT d.id FROM deck d JOIN module m ON m.id = d.module_id
+     WHERE d.deleted = 0 AND m.deleted = 0 AND m.language = 'en'
+       AND NOT EXISTS (SELECT 1 FROM job j WHERE j.deck_id = d.id AND j.kind = 'translate' AND j.status IN ('queued', 'running'))
+       AND EXISTS (SELECT 1 FROM note n WHERE n.deck_id = d.id AND n.deleted = 0 AND n.front_de IS NULL
+         AND n.updated_at > COALESCE((SELECT MAX(j.created_at) FROM job j WHERE j.deck_id = d.id AND j.kind = 'translate'), -1))
+     ORDER BY d.rowid`,
+  ).all() as Row[];
+  for (const d of decks) insertJob(db, d.id, 'translate', now);
+  return decks.length;
+}
+
 export function retryJob(db: Db, jobId: string): void {
   const r = db.prepare('SELECT * FROM job WHERE id = ?').get(jobId) as Row | undefined;
   if (!r) throw new Error(`Job ${jobId} nicht gefunden`);
   db.prepare("UPDATE job SET status = 'queued', attempts = 0, error = NULL WHERE id = ?").run(jobId);
-  if (r.kind !== 'gaps') repo.updateDeck(db, r.deck_id, { status: r.kind === 'render' ? 'pending' : 'generating', error: null });
+  if (r.kind !== 'gaps' && r.kind !== 'translate') repo.updateDeck(db, r.deck_id, { status: r.kind === 'render' ? 'pending' : 'generating', error: null });
 }
 
 export function resetRunningJobs(db: Db): void {
@@ -369,6 +394,42 @@ export function createWorker(deps: {
     });
   }
 
+  /** Deutsche Fassung für alle unübersetzten Karten des Foliensatzes, in Portionen. */
+  async function doTranslate(job: Job) {
+    const deck = repo.getDeck(db, job.deckId);
+    const mod = deck && repo.getModule(db, deck.moduleId);
+    if (!deck || !mod) return setJob(job.id, { status: 'failed', error: 'Foliensatz oder Modul gelöscht' });
+    const pending = mod.language === 'en'
+      ? repo.listNotes(db, { deckId: deck.id, limit: 100_000 }).filter((n) => n.frontDe === null)
+      : [];
+    let usage: ClaudeUsage | null = null;
+    for (let start = 0; start < pending.length; start += TRANSLATE_BATCH) {
+      const batch = pending.slice(start, start + TRANSLATE_BATCH);
+      const prompt = buildTranslatePrompt({
+        deckTitle: deck.title,
+        items: batch.map((n, i) => ({ n: i + 1, kind: n.kind, front: n.front, back: n.back })),
+      });
+      const r = await callClaude(prompt, translateJsonSchema, deck.id, summaryModel);
+      if (!r.ok) return handleFailure(job, r);
+      const parsed = TranslationOutputSchema.safeParse(r.output);
+      if (!parsed.success) return handleFailure(job, { ok: false, kind: 'invalid', message: 'Antwort passt nicht zum Schema' });
+      rateStrikes = 0;
+      usage = r.usage;
+      tx(db, () => {
+        for (const it of parsed.data.items) {
+          const n = batch[it.n - 1];
+          if (!n || !it.front.trim()) continue;
+          const want = clozeOrdinals(n.front).join(',');
+          if (clozeOrdinals(it.front).join(',') !== want) continue; // Lücken müssen übereinstimmen
+          repo.setNoteTranslation(db, n.id, n, { frontDe: it.front.trim(), backDe: it.back.trim() });
+        }
+      });
+    }
+    setJob(job.id, { status: 'done', attempts: job.attempts + 1, usage });
+  }
+
+  let lastScan = now();
+
   async function tick(): Promise<boolean> {
     if (paused) {
       if (pausedUntil === null || now() < pausedUntil) return false;
@@ -376,7 +437,12 @@ export function createWorker(deps: {
       pauseReason = null;
       pausedUntil = null;
     }
-    const row = db.prepare("SELECT * FROM job WHERE status = 'queued' ORDER BY rowid LIMIT 1").get() as Row | undefined;
+    const next = () => db.prepare("SELECT * FROM job WHERE status = 'queued' ORDER BY rowid LIMIT 1").get() as Row | undefined;
+    let row = next();
+    if (!row && now() - lastScan >= TRANSLATE_SCAN_MS) {
+      lastScan = now();
+      if (enqueueMissingTranslations(db, now()) > 0) row = next();
+    }
     if (!row) return false;
     const job = toJob(row);
     setJob(job.id, { status: 'running', error: job.error });
@@ -386,6 +452,7 @@ export function createWorker(deps: {
       else if (job.kind === 'summary') await doSummary(job);
       else if (job.kind === 'cards') await doCards(job);
       else if (job.kind === 'gaps') await doGaps(job);
+      else if (job.kind === 'translate') await doTranslate(job);
       else setJob(job.id, { status: 'failed', error: 'Veralteter Job – bitte „Neu erzeugen“' });
     } catch (e) {
       handleFailure(job, { ok: false, kind: 'failed', message: String(e) });

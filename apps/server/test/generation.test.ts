@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ClaudeRequest, ClaudeResult } from '../src/claude.ts';
-import { applyCardLimits, createWorker, enqueueDeck, enqueueGaps, listJobs, maxCardsFor, regenerateDeck, resetRunningJobs, retryJob, sanitizeNote } from '../src/generation.ts';
+import {
+  applyCardLimits, createWorker, enqueueDeck, enqueueGaps, enqueueMissingTranslations, listJobs, maxCardsFor, regenerateDeck,
+  resetRunningJobs, retryJob, sanitizeNote,
+} from '../src/generation.ts';
 import * as repo from '../src/repo.ts';
 import { addUser, memDb } from './helpers.ts';
 
@@ -34,10 +37,10 @@ function fakeClaude(script: Partial<Record<number, ClaudeResult>> = {}) {
 const fakeRender = async () =>
   Array.from({ length: PAGES }, (_, i) => ({ page: i + 1, text: i === 2 ? '' : `Text of slide ${i + 1} `.repeat(20), image: `${i + 1}.jpg` }));
 
-async function setup(script: Partial<Record<number, ClaudeResult>> = {}) {
+async function setup(script: Partial<Record<number, ClaudeResult>> = {}, language: 'en' | 'de' = 'en') {
   const db = memDb();
   const dataDir = await mkdtemp(path.join(tmpdir(), 'naklearn-gen-'));
-  const mod = repo.createModule(db, { name: 'CS', language: 'en' });
+  const mod = repo.createModule(db, { name: 'CS', language });
   const deck = repo.createDeck(db, { moduleId: mod.id, title: 'Week 1', pdfSha256: 'sha' });
   let now = 1_000_000;
   const claude = fakeClaude(script);
@@ -228,5 +231,98 @@ describe('Worker: fehlende Karten ergänzen', () => {
     await drain();
     expect(cardCount(db, deck.id)).toBe(2);
     expect(listJobs(db, deck.id).at(-1)).toMatchObject({ kind: 'gaps', status: 'done' });
+  });
+});
+
+describe('Worker: deutsche Übersetzung', () => {
+  const notes2: ClaudeResult = {
+    ok: true,
+    output: {
+      notes: [
+        { kind: 'qa', front: 'What is IaaS?', back: 'Infrastructure as a Service', slides: [1], frontImagePage: null, tags: [] },
+        { kind: 'cloze', front: '{{c1::Confidentiality}} and {{c2::integrity}}', back: '', slides: [2], frontImagePage: null, tags: [] },
+      ],
+    },
+    usage,
+  };
+  const translated = (items: { n: number; front: string; back: string }[]): ClaudeResult => ({ ok: true, output: { items }, usage });
+
+  async function generated(script: Partial<Record<number, ClaudeResult>> = {}, language: 'en' | 'de' = 'en') {
+    const env = await setup({ 2: notes2, ...script }, language);
+    enqueueDeck(env.db, env.deck.id);
+    await env.drain();
+    env.advance(1000);
+    const byFront = (f: string) => repo.listNotes(env.db, { deckId: env.deck.id }).find((n) => n.front.startsWith(f))!;
+    return { ...env, byFront };
+  }
+
+  it('übersetzt fehlende Karten mit dem Zusammenfassungs-Modell und lässt Lücken gleich', async () => {
+    const { db, deck, claude, drain, byFront } = await generated({
+      3: translated([
+        { n: 1, front: 'Was ist IaaS?', back: 'Infrastruktur als Dienst (Infrastructure as a Service)' },
+        { n: 2, front: '{{c1::Vertraulichkeit}} und {{c2::Integrität}}', back: '' },
+      ]),
+    });
+    expect(enqueueMissingTranslations(db, 2_000_000)).toBe(1);
+    await drain();
+    expect(claude.calls[2]!.model).toBe('sonnet');
+    expect(claude.calls[2]!.prompt).toContain('What is IaaS?');
+    expect(claude.calls[2]!.prompt).toContain('{{c1::Confidentiality}}');
+    expect(byFront('What')).toMatchObject({ frontDe: 'Was ist IaaS?', backDe: 'Infrastruktur als Dienst (Infrastructure as a Service)' });
+    expect(byFront('{{c1')).toMatchObject({ frontDe: '{{c1::Vertraulichkeit}} und {{c2::Integrität}}' });
+    expect(listJobs(db, deck.id).at(-1)).toMatchObject({ kind: 'translate', status: 'done' });
+    expect(repo.getDeck(db, deck.id)).toMatchObject({ status: 'ready' });
+  });
+
+  it('schickt nur noch nicht übersetzte Karten', async () => {
+    const { db, claude, drain, byFront } = await generated({ 3: translated([{ n: 1, front: 'L', back: '' }]) });
+    const qa = byFront('What');
+    repo.setNoteTranslation(db, qa.id, qa, { frontDe: 'schon da', backDe: 'ja' });
+    enqueueMissingTranslations(db, 2_000_000);
+    await drain();
+    expect(claude.calls[2]!.prompt).not.toContain('What is IaaS?');
+    expect(byFront('What')).toMatchObject({ frontDe: 'schon da' });
+  });
+
+  it('verwirft Lückentexte mit anderen Lücken und unbekannte Nummern, stößt danach nicht endlos neu an', async () => {
+    const { db, deck, claude, drain, advance, byFront } = await generated({
+      3: translated([
+        { n: 1, front: 'Was ist IaaS?', back: 'IaaS' },
+        { n: 2, front: '{{c1::Vertraulichkeit}} und Integrität', back: '' },
+        { n: 9, front: 'gibt es nicht', back: '' },
+      ]),
+      4: translated([{ n: 1, front: '{{c1::Vertraulichkeit}} und {{c2::Integrität}}', back: '' }]),
+    });
+    enqueueMissingTranslations(db, 2_000_000);
+    await drain();
+    expect(byFront('{{c1')).toMatchObject({ frontDe: null });
+    expect(enqueueMissingTranslations(db, 3_000_000)).toBe(0); // unverändert → kein neuer Versuch
+
+    advance(5_000_000);
+    const cz = byFront('{{c1');
+    repo.updateNote(db, cz.id, { back: 'CIA' }, 6_000_000);
+    expect(enqueueMissingTranslations(db, 6_000_001)).toBe(1);
+    await drain();
+    expect(claude.calls).toHaveLength(4);
+    expect(byFront('{{c1')).toMatchObject({ frontDe: '{{c1::Vertraulichkeit}} und {{c2::Integrität}}' });
+    expect(listJobs(db, deck.id).filter((j) => j.kind === 'translate')).toHaveLength(2);
+  });
+
+  it('kein zweiter Job, solange einer wartet; deutsche Module werden nie übersetzt', async () => {
+    const en = await generated();
+    expect(enqueueMissingTranslations(en.db, 2_000_000)).toBe(1);
+    expect(enqueueMissingTranslations(en.db, 2_000_001)).toBe(0);
+    const de = await generated({}, 'de');
+    expect(enqueueMissingTranslations(de.db, 2_000_000)).toBe(0);
+  });
+
+  it('der Worker stößt fehlende Übersetzungen selbst an, wenn er nichts zu tun hat', async () => {
+    const { db, deck, worker, claude, advance, byFront } = await generated({ 3: translated([{ n: 1, front: 'Was ist IaaS?', back: 'IaaS' }]) });
+    expect(await worker.tick()).toBe(false); // höchstens einmal pro Minute nachsehen
+    advance(60_000);
+    for (let i = 0; i < 5 && (await worker.tick()); i++);
+    expect(claude.calls).toHaveLength(3);
+    expect(byFront('What')).toMatchObject({ frontDe: 'Was ist IaaS?' });
+    expect(listJobs(db, deck.id).at(-1)).toMatchObject({ kind: 'translate', status: 'done' });
   });
 });

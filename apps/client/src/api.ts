@@ -11,7 +11,7 @@ export interface JobUsage {
   model: string | null; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; costUsd: number;
 }
 export interface Job {
-  id: string; deckId: string; kind: 'render' | 'summary' | 'cards' | 'gaps' | 'chunk' | 'synthesis'; chunkFrom: number | null; chunkTo: number | null;
+  id: string; deckId: string; kind: 'render' | 'summary' | 'cards' | 'gaps' | 'translate' | 'chunk' | 'synthesis'; chunkFrom: number | null; chunkTo: number | null;
   status: 'queued' | 'running' | 'done' | 'failed'; attempts: number; error: string | null; usage: JobUsage | null; createdAt: number;
 }
 export interface WorkerStatus {
