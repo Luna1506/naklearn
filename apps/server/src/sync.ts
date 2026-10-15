@@ -76,8 +76,11 @@ export function applyPush(db: Db, userId: string, push: SyncPush): void {
         bump(db, 'note', n.id);
         continue;
       }
-      db.prepare('UPDATE note SET front = ?, back = ?, tags = ?, deleted = ?, updated_at = ?, seq = ? WHERE id = ?')
-        .run(n.front, n.back, JSON.stringify(n.tags), n.deleted ? 1 : 0, n.updatedAt, nextSeq(db), n.id);
+      // Übersetzungen schreibt nur der Server; geänderter Text macht sie ungültig.
+      db.prepare(`UPDATE note SET front_de = CASE WHEN front = ? AND back = ? THEN front_de END,
+        back_de = CASE WHEN front = ? AND back = ? THEN back_de END,
+        front = ?, back = ?, tags = ?, deleted = ?, updated_at = ?, seq = ? WHERE id = ?`)
+        .run(n.front, n.back, n.front, n.back, n.front, n.back, JSON.stringify(n.tags), n.deleted ? 1 : 0, n.updatedAt, nextSeq(db), n.id);
     }
     for (const c of push.cards) {
       const cur = current(db, 'card', c.id);

@@ -56,12 +56,13 @@ async function applyPull(store: LocalStore, pull: SyncPull): Promise<void> {
   for (const n of pull.notes) {
     if (await keepLocal(db, 'note', n.id, n.updatedAt)) continue;
     await db.run(
-      `INSERT INTO note (id, deck_id, kind, front, back, slide_refs, front_image_page, tags, source, position, deleted, updated_at, dirty)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      `INSERT INTO note (id, deck_id, kind, front, back, slide_refs, front_image_page, tags, source, position, deleted, updated_at, front_de, back_de, dirty)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
        ON CONFLICT(id) DO UPDATE SET deck_id = excluded.deck_id, kind = excluded.kind, front = excluded.front, back = excluded.back,
          slide_refs = excluded.slide_refs, front_image_page = excluded.front_image_page, tags = excluded.tags,
-         source = excluded.source, position = excluded.position, deleted = excluded.deleted, updated_at = excluded.updated_at, dirty = 0`,
-      [n.id, n.deckId, n.kind, n.front, n.back, JSON.stringify(n.slideRefs), n.frontImagePage, JSON.stringify(n.tags), n.source, n.position, n.deleted ? 1 : 0, n.updatedAt],
+         source = excluded.source, position = excluded.position, deleted = excluded.deleted, updated_at = excluded.updated_at,
+         front_de = excluded.front_de, back_de = excluded.back_de, dirty = 0`,
+      [n.id, n.deckId, n.kind, n.front, n.back, JSON.stringify(n.slideRefs), n.frontImagePage, JSON.stringify(n.tags), n.source, n.position, n.deleted ? 1 : 0, n.updatedAt, n.frontDe, n.backDe],
     );
   }
   for (const c of pull.cards) {

@@ -61,4 +61,11 @@ export const CORE_MIGRATIONS: string[] = [
   ALTER TABLE deck ADD COLUMN summary TEXT;
   ALTER TABLE job ADD COLUMN usage_json TEXT;
   `,
+  // Deutsche Fassung (nur der Server schreibt sie). Der Cursor-Reset betrifft nur das Handy: Es lädt alle Notes neu,
+  // damit auch Übersetzungen ankommen, die eine ältere App-Version schon übersprungen hat.
+  `
+  ALTER TABLE note ADD COLUMN front_de TEXT;
+  ALTER TABLE note ADD COLUMN back_de TEXT;
+  DELETE FROM meta WHERE key = 'sync_cursor';
+  `,
 ];

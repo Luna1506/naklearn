@@ -1,3 +1,4 @@
+import { CORE_MIGRATIONS } from '@naklearn/core';
 import { describe, expect, it } from 'vitest';
 import { LocalStore } from '../src/store.ts';
 import { nodeAdapter } from './nodeAdapter.ts';
@@ -20,6 +21,16 @@ describe('LocalStore', () => {
     const b = await LocalStore.open(db);
     expect(a.deviceId).toMatch(/^[0-9a-f-]{36}$/);
     expect(b.deviceId).toBe(a.deviceId);
+  });
+
+  it('das Update mit Übersetzungsspalten setzt den Sync-Cursor zurück (alles neu laden)', async () => {
+    const db = nodeAdapter();
+    for (let v = 0; v < CORE_MIGRATIONS.length - 1; v++) await db.execute(CORE_MIGRATIONS[v]!);
+    await db.execute(`PRAGMA user_version = ${CORE_MIGRATIONS.length - 1}`);
+    await db.run("INSERT INTO meta (key, value) VALUES ('sync_cursor', '42')");
+    const store = await LocalStore.open(db);
+    expect(await store.getMeta('sync_cursor')).toBeNull();
+    expect(await db.all('SELECT front_de, back_de FROM note')).toEqual([]);
   });
 
   it('lernt offline: nächste Karte, bewerten, rückgängig – alles als dirty markiert', async () => {

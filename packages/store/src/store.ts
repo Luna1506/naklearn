@@ -175,7 +175,12 @@ export class LocalStore {
     if (ords.length === 0) throw new Error('Lückentext ohne Lücke ({{c1::…}})');
     const now = await this.editTime('note', noteId);
     await this.db.transaction(async () => {
-      await this.db.run('UPDATE note SET front = ?, back = ?, updated_at = ?, dirty = 1 WHERE id = ?', [patch.front, patch.back, now, noteId]);
+      const changed = patch.front !== note.front || patch.back !== note.back;
+      // Geänderter Text: deutsche Fassung verwerfen, der Server übersetzt neu.
+      await this.db.run(
+        `UPDATE note SET front = ?, back = ?, updated_at = ?, dirty = 1${changed ? ', front_de = NULL, back_de = NULL' : ''} WHERE id = ?`,
+        [patch.front, patch.back, now, noteId],
+      );
       const cards = (await this.db.all('SELECT * FROM card WHERE note_id = ?', [noteId])).map(toCard);
       for (const c of cards) {
         const live = ords.includes(c.ordinal);

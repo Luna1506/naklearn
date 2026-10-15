@@ -24,6 +24,7 @@ export const toNote = (r: Row): Note => ({
   id: r.id, deckId: r.deck_id, kind: r.kind, front: r.front, back: r.back,
   slideRefs: JSON.parse(r.slide_refs), frontImagePage: r.front_image_page ?? null, tags: JSON.parse(r.tags),
   source: r.source, position: r.position, deleted: !!r.deleted, updatedAt: r.updated_at,
+  frontDe: r.front_de ?? null, backDe: r.back_de ?? null,
 });
 
 export const toCard = (r: Row): Card => ({

@@ -5,6 +5,7 @@ import type { Card, Note } from '../src/types.ts';
 const baseNote: Note = {
   id: 'n1', deckId: 'd1', kind: 'qa', front: 'Was ist HCI?', back: 'Human-Computer Interaction …',
   slideRefs: [3, 4], frontImagePage: null, tags: [], source: 'chunk', position: 0, deleted: false, updatedAt: 0,
+  frontDe: null, backDe: null,
 };
 const card: Card = { id: 'c1', noteId: 'n1', ordinal: 0, suspended: false, deleted: false, updatedAt: 0 };
 const intervals = { 1: '<10m', 2: '1d', 3: '3d', 4: '8d' } as const;
@@ -22,6 +23,19 @@ describe('toStudyCard', () => {
     const sc = toStudyCard({ note, card: { ...card, ordinal: 2 }, moduleName: 'UIUX', deckTitle: 'Ch1', intervals });
     expect(sc.front).toBe('Norman prägte <span class="cloze">[…]</span>');
     expect(sc.back).toBe('Norman prägte <span class="cloze-answer">Affordances</span>\n\n---\n\nExtra');
+  });
+  it('ohne Übersetzung sind die deutschen Seiten null', () => {
+    const sc = toStudyCard({ note: baseNote, card, moduleName: 'UIUX', deckTitle: 'Ch1', intervals });
+    expect(sc).toMatchObject({ frontDe: null, backDe: null });
+  });
+  it('rendert die deutsche Fassung eines Lückentexts mit derselben Lücke', () => {
+    const note: Note = {
+      ...baseNote, kind: 'cloze', front: '{{c1::Norman}} coined {{c2::affordances}}', back: '',
+      frontDe: '{{c1::Norman}} prägte {{c2::Affordanzen}}', backDe: 'Extra',
+    };
+    const sc = toStudyCard({ note, card: { ...card, ordinal: 2 }, moduleName: 'UIUX', deckTitle: 'Ch1', intervals });
+    expect(sc.frontDe).toBe('Norman prägte <span class="cloze">[…]</span>');
+    expect(sc.backDe).toBe('Norman prägte <span class="cloze-answer">Affordanzen</span>\n\n---\n\nExtra');
   });
   it('lässt die Trennlinie ohne Zusatzerklärung weg', () => {
     const note: Note = { ...baseNote, kind: 'cloze', front: '{{c1::A}}', back: '' };

@@ -12,6 +12,8 @@ const NoteRowSchema = z.object({
   id: z.string(), deckId: z.string(), kind: z.enum(['qa', 'cloze', 'diagram']), front: z.string(), back: z.string(),
   slideRefs: z.array(z.number().int()), frontImagePage: z.number().int().nullable(), tags: z.array(z.string()),
   source: z.enum(['chunk', 'synthesis', 'manual']), position: z.number(), deleted: z.boolean(), updatedAt: z.number(),
+  // Alte Apps senden die Felder nicht; der Server ignoriert sie beim Push ohnehin.
+  frontDe: z.string().nullable().default(null), backDe: z.string().nullable().default(null),
 });
 const CardRowSchema = z.object({
   id: z.string(), noteId: z.string(), ordinal: z.number().int(), suspended: z.boolean(), deleted: z.boolean(), updatedAt: z.number(),

@@ -51,6 +51,9 @@ export interface Note {
   position: number;
   deleted: boolean;
   updatedAt: number;
+  /** Deutsche Fassung, null = (noch) nicht übersetzt. Schreibt nur der Server. */
+  frontDe: string | null;
+  backDe: string | null;
 }
 
 export interface Card {
@@ -106,6 +109,9 @@ export interface StudyCard {
   front: string;
   /** Fertiges Markdown der Rückseite. */
   back: string;
+  /** Deutsche Fassung von `front`/`back`, null = nicht übersetzt. */
+  frontDe: string | null;
+  backDe: string | null;
   frontImagePage: number | null;
   slides: number[];
   moduleName: string;

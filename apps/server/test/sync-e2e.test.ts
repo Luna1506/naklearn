@@ -228,4 +228,18 @@ describe('zwei Personen, zwei Handys', () => {
     expect(note!.front).toBe('Q0 verbessert');
     expect(await b.store.db.all('SELECT * FROM revlog')).toEqual([]);
   });
+
+  it('Übersetzungen kommen aufs Handy; Bearbeiten auf dem Handy leert sie hier und dort', async () => {
+    const { db, deck, phone, transport } = await setup();
+    const note = repo.listNotes(db, { deckId: deck.id }).find((n) => n.front === 'Q0')!;
+    repo.setNoteTranslation(db, note.id, { front: 'Q0', back: 'A' }, { frontDe: 'F0', backDe: 'Antwort' });
+    await syncStore(phone, transport);
+    const card = (await phone.next({})).card!;
+    expect(card).toMatchObject({ front: 'Q0', frontDe: 'F0', backDe: 'Antwort' });
+
+    await phone.updateNote(note.id, { front: 'Q0 neu', back: 'A' });
+    expect((await phone.next({})).card).toMatchObject({ front: 'Q0 neu', frontDe: null, backDe: null });
+    await syncStore(phone, transport);
+    expect(repo.getNote(db, note.id)).toMatchObject({ front: 'Q0 neu', frontDe: null, backDe: null });
+  });
 });

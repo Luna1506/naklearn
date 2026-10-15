@@ -260,8 +260,11 @@ export function updateNote(
   const next = { ...cur, ...patch };
   const ords = ordinalsFor(next.kind, next.front);
   return tx(db, () => {
-    db.prepare('UPDATE note SET front = ?, back = ?, tags = ?, updated_at = ?, seq = ? WHERE id = ?')
-      .run(next.front, next.back, JSON.stringify(next.tags), now, nextSeq(db), id);
+    // Geänderter Text → deutsche Fassung veraltet, wird neu übersetzt.
+    db.prepare(`UPDATE note SET front_de = CASE WHEN front = ? AND back = ? THEN front_de END,
+      back_de = CASE WHEN front = ? AND back = ? THEN back_de END,
+      front = ?, back = ?, tags = ?, updated_at = ?, seq = ? WHERE id = ?`)
+      .run(next.front, next.back, next.front, next.back, next.front, next.back, JSON.stringify(next.tags), now, nextSeq(db), id);
     const existing = listCardsOfNote(db, id);
     for (const c of existing) {
       const shouldLive = ords.includes(c.ordinal);
@@ -295,6 +298,18 @@ export function setCardFlag(db: Db, userId: string, cardId: string, suspended: b
     ).run(userId, cardId, suspended ? 1 : 0, now);
     db.prepare('UPDATE card SET seq = ? WHERE id = ?').run(nextSeq(db), cardId);
   });
+}
+
+/**
+ * Schreibt die deutsche Fassung, falls `front`/`back` noch dem übersetzten Text entsprechen. Neue seq (Geräte laden sie),
+ * `updated_at` bleibt (kein Last-Writer-Wins-Konflikt mit echten Bearbeitungen).
+ */
+export function setNoteTranslation(
+  db: Db, id: string, source: { front: string; back: string }, de: { frontDe: string; backDe: string },
+): boolean {
+  const r = db.prepare('UPDATE note SET front_de = ?, back_de = ?, seq = ? WHERE id = ? AND front = ? AND back = ? AND deleted = 0')
+    .run(de.frontDe, de.backDe, nextSeq(db), id, source.front, source.back);
+  return Number(r.changes) > 0;
 }
 
 export interface NoteListItem extends Note {

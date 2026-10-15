@@ -9,6 +9,7 @@ function card(id: string): StudyCard {
     cardId: id, noteId: `n${id}`, deckId: 'd', kind: 'qa', front: `Frage ${id}`, back: `Antwort ${id}`,
     frontImagePage: null, slides: [2], moduleName: 'UIUX', deckTitle: 'Ch1',
     intervals: { 1: '1m', 2: '6m', 3: '10m', 4: '3d' }, noteFront: `Frage ${id}`, noteBack: `Antwort ${id}`,
+    frontDe: null, backDe: null,
   };
 }
 

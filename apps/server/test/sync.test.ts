@@ -237,3 +237,46 @@ describe('Sicht der Person', () => {
     expect(pullSince(db, mia, cursor).pull.modules).toEqual([expect.objectContaining({ id: mod.id, deleted: true })]);
   });
 });
+
+describe('Übersetzungen', () => {
+  it('der Server schreibt sie mit neuer seq, ohne updated_at zu ändern, und liefert sie im Pull', () => {
+    const { db, qa, U } = seeded();
+    const { cursor } = pullSince(db, U, 0);
+    expect(repo.setNoteTranslation(db, qa.note.id, { front: 'Q', back: 'A' }, { frontDe: 'F', backDe: 'Ant' })).toBe(true);
+    const pulled = pullSince(db, U, cursor).pull.notes;
+    expect(pulled).toHaveLength(1);
+    expect(pulled[0]).toMatchObject({ id: qa.note.id, frontDe: 'F', backDe: 'Ant', updatedAt: 1000 });
+  });
+
+  it('wird nicht geschrieben, wenn der Text inzwischen geändert wurde', () => {
+    const { db, qa } = seeded();
+    repo.updateNote(db, qa.note.id, { front: 'Q neu' }, 2000);
+    expect(repo.setNoteTranslation(db, qa.note.id, { front: 'Q', back: 'A' }, { frontDe: 'F', backDe: 'Ant' })).toBe(false);
+    expect(repo.getNote(db, qa.note.id)).toMatchObject({ frontDe: null, backDe: null });
+  });
+
+  it('Push einer alten App ohne Übersetzungsfelder und mit gleichem Text behält die Übersetzung', () => {
+    const { db, qa, U } = seeded();
+    repo.setNoteTranslation(db, qa.note.id, { front: 'Q', back: 'A' }, { frontDe: 'F', backDe: 'Ant' });
+    const { frontDe: _f, backDe: _b, ...old } = repo.getNote(db, qa.note.id)!;
+    applyPush(db, U, { ...emptyPush(), notes: [{ ...old, tags: ['neu'], updatedAt: 2000 } as never] });
+    expect(repo.getNote(db, qa.note.id)).toMatchObject({ tags: ['neu'], frontDe: 'F', backDe: 'Ant' });
+  });
+
+  it('Push mit geändertem Text leert die Übersetzung; gepushte Übersetzungen werden ignoriert', () => {
+    const { db, qa, U } = seeded();
+    repo.setNoteTranslation(db, qa.note.id, { front: 'Q', back: 'A' }, { frontDe: 'F', backDe: 'Ant' });
+    const cur = repo.getNote(db, qa.note.id)!;
+    applyPush(db, U, { ...emptyPush(), notes: [{ ...cur, back: 'A2', frontDe: 'X', backDe: 'Y', updatedAt: 2000 }] });
+    expect(repo.getNote(db, qa.note.id)).toMatchObject({ back: 'A2', frontDe: null, backDe: null });
+  });
+
+  it('Bearbeiten im Studio leert sie nur bei Textänderung', () => {
+    const { db, qa } = seeded();
+    repo.setNoteTranslation(db, qa.note.id, { front: 'Q', back: 'A' }, { frontDe: 'F', backDe: 'Ant' });
+    repo.updateNote(db, qa.note.id, { tags: ['x'] }, 2000);
+    expect(repo.getNote(db, qa.note.id)).toMatchObject({ frontDe: 'F' });
+    repo.updateNote(db, qa.note.id, { back: 'A2' }, 3000);
+    expect(repo.getNote(db, qa.note.id)).toMatchObject({ frontDe: null, backDe: null });
+  });
+});

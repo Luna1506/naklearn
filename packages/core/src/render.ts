@@ -9,14 +9,15 @@ export interface StudyCardInput {
   intervals: Record<Grade, string>;
 }
 
+function renderSides(kind: Note['kind'], rawFront: string, rawBack: string, ordinal: number): { front: string; back: string } {
+  if (kind !== 'cloze') return { front: rawFront, back: rawBack };
+  const full = renderCloze(rawFront, ordinal, 'back');
+  return { front: renderCloze(rawFront, ordinal, 'front'), back: rawBack.trim() ? `${full}\n\n---\n\n${rawBack}` : full };
+}
+
 export function toStudyCard({ note, card, moduleName, deckTitle, intervals }: StudyCardInput): StudyCard {
-  let front = note.front;
-  let back = note.back;
-  if (note.kind === 'cloze') {
-    front = renderCloze(note.front, card.ordinal, 'front');
-    const full = renderCloze(note.front, card.ordinal, 'back');
-    back = note.back.trim() ? `${full}\n\n---\n\n${note.back}` : full;
-  }
+  const { front, back } = renderSides(note.kind, note.front, note.back, card.ordinal);
+  const de = note.frontDe !== null ? renderSides(note.kind, note.frontDe, note.backDe ?? '', card.ordinal) : null;
   return {
     cardId: card.id,
     noteId: note.id,
@@ -24,6 +25,8 @@ export function toStudyCard({ note, card, moduleName, deckTitle, intervals }: St
     kind: note.kind,
     front,
     back,
+    frontDe: de?.front ?? null,
+    backDe: de?.back ?? null,
     frontImagePage: note.kind === 'diagram' ? note.frontImagePage : null,
     slides: note.slideRefs,
     moduleName,
