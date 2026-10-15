@@ -11,7 +11,7 @@ export interface JobUsage {
   model: string | null; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; costUsd: number;
 }
 export interface Job {
-  id: string; deckId: string; kind: 'render' | 'summary' | 'cards' | 'chunk' | 'synthesis'; chunkFrom: number | null; chunkTo: number | null;
+  id: string; deckId: string; kind: 'render' | 'summary' | 'cards' | 'gaps' | 'chunk' | 'synthesis'; chunkFrom: number | null; chunkTo: number | null;
   status: 'queued' | 'running' | 'done' | 'failed'; attempts: number; error: string | null; usage: JobUsage | null; createdAt: number;
 }
 export interface WorkerStatus {
@@ -97,6 +97,7 @@ export const api = {
   deleteDeck: (id: string) => request<{ ok: true }>(`/api/decks/${id}`, { method: 'DELETE' }),
   regenerate: (id: string, includeReviewed = false) =>
     request<{ ok: true }>(`/api/decks/${id}/regenerate`, json('POST', { includeReviewed })),
+  fillGaps: (id: string) => request<{ ok: true }>(`/api/decks/${id}/gaps`, { method: 'POST' }),
   retryJob: (id: string) => request<{ ok: true }>(`/api/jobs/${id}/retry`, { method: 'POST' }),
   worker: () => request<WorkerStatus>('/api/worker'),
   resumeWorker: () => request<{ ok: true }>('/api/worker/resume', { method: 'POST' }),

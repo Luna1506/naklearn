@@ -97,12 +97,20 @@ describe('newCardLimit', () => {
       limit: 15, target: 20, warn: false,
     });
   });
-  it('mit Prüfung: verteilt bis 3 Tage vorher', () => {
+  it('mit Prüfung: verteilt exakt bis 3 Tage vorher, „pro Tag“ ist kein Mindestwert', () => {
     // 06.10. bis 27.10. = 22 Tage inklusive heute
     const base = { newPerDay: 20, examDate: '2026-10-30', introducedToday: 0, now: NOW };
-    expect(newCardLimit({ ...base, remainingNew: 400 }).target).toBe(20);
+    expect(newCardLimit({ ...base, remainingNew: 400 }).target).toBe(19);
+    expect(newCardLimit({ ...base, remainingNew: 44 }).target).toBe(2);
+    expect(newCardLimit({ ...base, remainingNew: 0 }).target).toBe(0);
     expect(newCardLimit({ ...base, remainingNew: 1000 }).target).toBe(46);
     expect(newCardLimit({ ...base, remainingNew: 2000 })).toEqual({ limit: 91, target: 91, warn: true });
+  });
+  it('mit Prüfung: ein verpasster Tag wird auf die restlichen Tage verteilt', () => {
+    // 22 Tage, 220 Karten → 10/Tag; 07.10. ausgelassen → am 08.10. 210 Karten auf 20 Tage
+    const base = { newPerDay: 0, examDate: '2026-10-30', introducedToday: 0 };
+    expect(newCardLimit({ ...base, remainingNew: 220, now: NOW }).target).toBe(10);
+    expect(newCardLimit({ ...base, remainingNew: 210, now: at('2026-10-08T10:00:00+09:00') }).target).toBe(11);
   });
   it('bleibt über den Tag stabil (heute eingeführte zählen zum Gesamtbestand)', () => {
     const base = { newPerDay: 20, examDate: '2026-10-30', now: NOW };

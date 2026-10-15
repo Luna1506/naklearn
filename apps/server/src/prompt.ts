@@ -27,7 +27,16 @@ export interface CardsPromptInput {
   language: Language;
   deckTitle: string;
   summary: string;
-  outline: string;
+  slides: { page: number; text: string }[];
+  maxCards: number;
+  figures: PromptFigure[];
+}
+
+export interface GapsPromptInput {
+  language: Language;
+  deckTitle: string;
+  slides: { page: number; text: string }[];
+  existing: { front: string; back: string; slides: number[] }[];
   maxCards: number;
   figures: PromptFigure[];
 }
@@ -44,20 +53,26 @@ export function pickFigurePages(slides: { page: number; text: string }[], max: n
     .sort((a, b) => a - b);
 }
 
-export function outlineOf(slides: { page: number; text: string }[]): string {
-  return slides
-    .map((s) => {
-      const first = s.text.split('\n').map((l) => l.trim()).find((l) => l.length > 0);
-      return `p. ${s.page}: ${first ? first.slice(0, 80) : '(leer)'}`;
-    })
-    .join('\n');
-}
-
 function languageRule(language: Language): string {
   return language === 'en'
     ? 'Write everything in English, using the exact technical terms from the slides.'
     : 'Write everything in German. The first time an English technical term from the slides appears, give it in parentheses after the German term, e.g. "Gestaltungsrichtlinien (design guidelines)".';
 }
+
+function slidesText(slides: { page: number; text: string }[]): string {
+  return slides.map((s) => `=== Slide ${s.page} ===\n${s.text || '(no extractable text)'}`).join('\n\n');
+}
+
+const CARD_RULES = `- One learning goal per card, one card per concept – no duplicates, no trivia, no details of examples.
+- Answers concise but complete: the definition or core statement plus 1–3 key points; a short example only if it really helps. Markdown allowed.
+- Kinds:
+  - "qa" (default): question on the front, answer on the back.
+  - "cloze": only for a key definition or a short list; at most 2 gaps ({{c1::…}}, {{c2::…}}) that hide the key terms; "back" may hold a one-line explanation or be empty.
+  - "diagram": only if one of the listed figures is itself the subject AND the answer is not printed on that slide; set "frontImagePage" to that page. Rarely needed.
+- "slides": the page numbers the card is based on. "frontImagePage": null unless diagram. "tags": 1–3 short topic tags.`;
+
+const EXAM_SCOPE = `Exam-relevant: core concepts and definitions, models/frameworks and their parts, processes and their steps, key distinctions and comparisons, important principles.
+Not exam-relevant: title, agenda and recap-only slides; course logistics; anecdotes and the storytelling of running examples (only the concept they illustrate counts); history and dates; screenshots and their concrete values; tool/UI details.`;
 
 function figureList(figures: PromptFigure[]): string {
   if (figures.length === 0) return '(none)';
@@ -65,7 +80,7 @@ function figureList(figures: PromptFigure[]): string {
 }
 
 export function buildSummaryPrompt(i: SummaryPromptInput): string {
-  const text = i.slides.map((s) => `=== Slide ${s.page} ===\n${s.text || '(no extractable text)'}`).join('\n\n');
+  const text = slidesText(i.slides);
   return `You are condensing lecture slides into a compact, exam-focused study summary.
 
 Lecture: "${i.deckTitle}"
@@ -87,34 +102,64 @@ Return JSON matching the given schema: {"summary": "<markdown>"}.`;
 }
 
 export function buildCardsPrompt(i: CardsPromptInput): string {
-  const aim = Math.max(1, Math.round(i.maxCards * 0.6));
-  return `You are writing spaced-repetition flashcards from an exam-focused lecture summary.
+  return `You are writing spaced-repetition flashcards for an exam from lecture slides and their summary.
 
 Lecture: "${i.deckTitle}"
 ${languageRule(i.language)}
 
+Goal: every exam-relevant piece of content gets exactly one card – nothing important missing, nothing beyond that.
+${EXAM_SCOPE}
+
 Hard limits:
-- at most ${i.maxCards} cards in total – fewer is better, aim for about ${aim}. A cloze note counts once per gap.
+- at most ${i.maxCards} cards in total (a cloze note counts once per gap) – this is a ceiling, not a target.
 - at most 2 cards per slide.
 - Order the notes by importance (most exam-relevant first); anything beyond the limit is dropped from the end.
 
 Rules:
-- One learning goal per card, one card per concept – no duplicates, no trivia, no details of examples.
-- Answers concise but complete: the definition or core statement plus 1–3 key points; a short example only if it really helps. Markdown allowed.
-- Kinds:
-  - "qa" (default): question on the front, answer on the back.
-  - "cloze": only for a key definition or a short list; at most 2 gaps ({{c1::…}}, {{c2::…}}) that hide the key terms; "back" may hold a one-line explanation or be empty.
-  - "diagram": only if one of the listed figures is itself the subject AND the answer is not printed on that slide; set "frontImagePage" to that page. Rarely needed.
-- "slides": page numbers taken from the summary's "(p. …)" references. "frontImagePage": null unless diagram. "tags": 1–3 short topic tags.
+${CARD_RULES}
 
-Summary:
+Summary (what matters, with slide references):
 
 ${i.summary}
 
-Slide outline (for page numbers):
-${i.outline}
+Slides (full text, check that nothing exam-relevant from them is missing):
+
+${slidesText(i.slides)}
 
 Figures available for diagram cards:
+${figureList(i.figures)}
+
+Return JSON matching the given schema: {"notes": [...]}.`;
+}
+
+export function buildGapsPrompt(i: GapsPromptInput): string {
+  const existing = i.existing.length
+    ? i.existing.map((c, n) => `${n + 1}. [p. ${c.slides.join(', ')}] ${c.front.replace(/\s+/g, ' ')} → ${c.back.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n')
+    : '(none)';
+  return `You are checking a set of exam flashcards for gaps and writing cards ONLY for what is missing.
+
+Lecture: "${i.deckTitle}"
+${languageRule(i.language)}
+
+Go through the slides and find exam-relevant content that NO existing card asks for.
+${EXAM_SCOPE}
+
+Write new cards only for those gaps. If everything important is covered, return an empty list – that is a good result.
+- Never repeat or rephrase something an existing card already covers.
+- at most ${i.maxCards} new cards (a cloze note counts once per gap) – a ceiling, not a target.
+- Order the notes by importance (most exam-relevant first); anything beyond the limit is dropped from the end.
+
+Rules:
+${CARD_RULES}
+
+Existing cards:
+${existing}
+
+Slides (full text):
+
+${slidesText(i.slides)}
+
+Slides that are mostly a figure (open with the Read tool only if you need the figure to judge a gap):
 ${figureList(i.figures)}
 
 Return JSON matching the given schema: {"notes": [...]}.`;

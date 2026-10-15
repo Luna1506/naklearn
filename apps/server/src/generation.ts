@@ -8,13 +8,13 @@ import path from 'node:path';
 import type { ClaudeResult, ClaudeUsage, RunClaude } from './claude.ts';
 import { tx, type Db } from './db.ts';
 import { renderPdf, type RenderedSlide } from './pdf.ts';
-import { buildCardsPrompt, buildSummaryPrompt, cardsJsonSchema, outlineOf, pickFigurePages, summaryJsonSchema } from './prompt.ts';
+import { buildCardsPrompt, buildGapsPrompt, buildSummaryPrompt, cardsJsonSchema, pickFigurePages, summaryJsonSchema } from './prompt.ts';
 import * as repo from './repo.ts';
 
 export const MAX_ATTEMPTS = 3;
 export const RATE_LIMIT_BACKOFF_MS = [300_000, 900_000, 3_600_000];
 /** Höchstens so viele Karten pro Folie im Schnitt bzw. zu einer einzelnen Folie. */
-export const CARDS_PER_SLIDE = 1;
+export const CARDS_PER_SLIDE = 1.25;
 export const MAX_CARDS_PER_SLIDE = 2;
 export const MAX_CLOZE_GAPS = 2;
 export const MAX_FIGURES = 5;
@@ -22,8 +22,8 @@ export const MAX_FIGURES = 5;
 export interface Job {
   id: string;
   deckId: string;
-  /** 'chunk'/'synthesis' stammen aus dem alten Verfahren und werden nicht mehr ausgeführt. */
-  kind: 'render' | 'summary' | 'cards' | 'chunk' | 'synthesis';
+  /** 'gaps' ergänzt fehlende Karten. 'chunk'/'synthesis' stammen aus dem alten Verfahren und werden nicht mehr ausgeführt. */
+  kind: 'render' | 'summary' | 'cards' | 'gaps' | 'chunk' | 'synthesis';
   chunkFrom: number | null;
   chunkTo: number | null;
   status: 'queued' | 'running' | 'done' | 'failed';
@@ -97,16 +97,26 @@ export function regenerateDeck(db: Db, deckId: string, now = Date.now(), opts: {
   });
 }
 
+/** Lässt fehlende Karten ergänzen; vorhandene bleiben unverändert. Kein zweiter Job, solange einer wartet. */
+export function enqueueGaps(db: Db, deckId: string, now = Date.now()): boolean {
+  const pending = db.prepare("SELECT 1 FROM job WHERE deck_id = ? AND kind = 'gaps' AND status IN ('queued', 'running')").get(deckId);
+  if (pending) return false;
+  insertJob(db, deckId, 'gaps', now);
+  return true;
+}
+
 export function retryJob(db: Db, jobId: string): void {
   const r = db.prepare('SELECT * FROM job WHERE id = ?').get(jobId) as Row | undefined;
   if (!r) throw new Error(`Job ${jobId} nicht gefunden`);
   db.prepare("UPDATE job SET status = 'queued', attempts = 0, error = NULL WHERE id = ?").run(jobId);
-  repo.updateDeck(db, r.deck_id, { status: r.kind === 'render' ? 'pending' : 'generating', error: null });
+  if (r.kind !== 'gaps') repo.updateDeck(db, r.deck_id, { status: r.kind === 'render' ? 'pending' : 'generating', error: null });
 }
 
 export function resetRunningJobs(db: Db): void {
   db.prepare("UPDATE job SET status = 'queued' WHERE status = 'running'").run();
 }
+
+export const maxCardsFor = (pageCount: number) => Math.max(3, Math.floor(pageCount * CARDS_PER_SLIDE));
 
 export interface CleanNote {
   kind: NoteKind;
@@ -139,17 +149,24 @@ export function sanitizeNote(n: GeneratedNote, pageCount: number, fallbackPage: 
   };
 }
 
-/** Behält Notes in der gelieferten Reihenfolge (Wichtigkeit), solange Gesamt- und Pro-Folie-Grenze halten. */
+const cardsOf = (n: { kind: NoteKind; front: string }) => (n.kind === 'cloze' ? clozeOrdinals(n.front).length : 1);
+
+/**
+ * Behält Notes in der gelieferten Reihenfolge (Wichtigkeit), solange Gesamt- und Pro-Folie-Grenze halten.
+ * `existing` zählt bereits vorhandene Karten mit (Ergänzen von Lücken).
+ */
 export function applyCardLimits<T extends { kind: NoteKind; front: string; slideRefs: number[] }>(
   notes: T[],
   maxCards: number,
   perSlide = MAX_CARDS_PER_SLIDE,
+  existing: { cards: number; slide: number }[] = [],
 ): T[] {
   const kept: T[] = [];
   const bySlide = new Map<number, number>();
-  let total = 0;
+  for (const e of existing) bySlide.set(e.slide, (bySlide.get(e.slide) ?? 0) + e.cards);
+  let total = existing.reduce((s, e) => s + e.cards, 0);
   for (const n of notes) {
-    const count = n.kind === 'cloze' ? clozeOrdinals(n.front).length : 1;
+    const count = cardsOf(n);
     const slide = n.slideRefs[0]!;
     const onSlide = bySlide.get(slide) ?? 0;
     if (total + count > maxCards || onSlide + count > perSlide) continue;
@@ -294,12 +311,12 @@ export function createWorker(deps: {
       return finalizeDeck(deck.id);
     }
     const slides = repo.listSlides(db, deck.id);
-    const maxCards = Math.max(3, Math.floor(deck.pageCount * CARDS_PER_SLIDE));
+    const maxCards = maxCardsFor(deck.pageCount);
     const prompt = buildCardsPrompt({
       language: mod.language,
       deckTitle: deck.title,
       summary: deck.summary,
-      outline: outlineOf(slides),
+      slides,
       maxCards,
       figures: figuresOf(deck.id, slides),
     });
@@ -319,6 +336,39 @@ export function createWorker(deps: {
     finalizeDeck(deck.id);
   }
 
+  async function doGaps(job: Job) {
+    const deck = repo.getDeck(db, job.deckId);
+    const mod = deck && repo.getModule(db, deck.moduleId);
+    if (!deck || !mod) return setJob(job.id, { status: 'failed', error: 'Foliensatz oder Modul gelöscht' });
+    const notes = repo.listNotes(db, { deckId: deck.id, limit: 100_000 });
+    const existing = notes.map((n) => ({ cards: n.cards.length, slide: n.slideRefs[0]! }));
+    const room = maxCardsFor(deck.pageCount) - existing.reduce((s, e) => s + e.cards, 0);
+    if (room <= 0) return setJob(job.id, { status: 'done', attempts: job.attempts + 1 }); // Obergrenze erreicht, kein Aufruf
+    const slides = repo.listSlides(db, deck.id);
+    const prompt = buildGapsPrompt({
+      language: mod.language,
+      deckTitle: deck.title,
+      slides,
+      existing: notes.map((n) => ({ front: n.front, back: n.back, slides: n.slideRefs })),
+      maxCards: room,
+      figures: figuresOf(deck.id, slides),
+    });
+    const r = await callClaude(prompt, cardsJsonSchema, deck.id, cardsModel);
+    if (!r.ok) return handleFailure(job, r);
+    const parsed = CardsOutputSchema.safeParse(r.output);
+    if (!parsed.success) return handleFailure(job, { ok: false, kind: 'invalid', message: 'Antwort passt nicht zum Schema' });
+    rateStrikes = 0;
+    const clean = parsed.data.notes.map((n) => sanitizeNote(n, deck.pageCount, 1)).filter((n): n is CleanNote => n !== null);
+    const kept = applyCardLimits(clean, maxCardsFor(deck.pageCount), MAX_CARDS_PER_SLIDE, existing);
+    tx(db, () => {
+      // hinter die vorhandenen Karten derselben Folie (die liegen bei Folie × 1000 + Index)
+      kept.forEach((n, i) => {
+        repo.insertNote(db, { deckId: deck.id, source: 'chunk', position: n.slideRefs[0]! * 1000 + 500 + i, ...n }, now());
+      });
+      setJob(job.id, { status: 'done', attempts: job.attempts + 1, usage: r.usage });
+    });
+  }
+
   async function tick(): Promise<boolean> {
     if (paused) {
       if (pausedUntil === null || now() < pausedUntil) return false;
@@ -335,6 +385,7 @@ export function createWorker(deps: {
       if (job.kind === 'render') await doRender(job);
       else if (job.kind === 'summary') await doSummary(job);
       else if (job.kind === 'cards') await doCards(job);
+      else if (job.kind === 'gaps') await doGaps(job);
       else setJob(job.id, { status: 'failed', error: 'Veralteter Job – bitte „Neu erzeugen“' });
     } catch (e) {
       handleFailure(job, { ok: false, kind: 'failed', message: String(e) });

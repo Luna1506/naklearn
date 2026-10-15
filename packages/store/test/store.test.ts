@@ -57,7 +57,7 @@ describe('LocalStore', () => {
     const { db, store } = await open();
     await store.setSuspended('c1', true);
     await store.updateModule('m1', { examDate: '2026-10-30', newPerDay: 30 });
-    expect((await store.next({})).counts.new).toBe(2);
+    expect((await store.next({})).counts.new).toBe(1); // 2 nicht pausierte neue Karten, exakt auf 22 Tage verteilt
     const m = await db.all<{ exam_date: string; new_per_day: number; dirty: number }>("SELECT exam_date, new_per_day, dirty FROM module WHERE id = 'm1'");
     expect(m[0]).toEqual({ exam_date: '2026-10-30', new_per_day: 30, dirty: 1 });
   });

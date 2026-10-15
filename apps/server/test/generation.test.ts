@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ClaudeRequest, ClaudeResult } from '../src/claude.ts';
-import { applyCardLimits, createWorker, enqueueDeck, listJobs, regenerateDeck, resetRunningJobs, retryJob, sanitizeNote } from '../src/generation.ts';
+import { applyCardLimits, createWorker, enqueueDeck, enqueueGaps, listJobs, maxCardsFor, regenerateDeck, resetRunningJobs, retryJob, sanitizeNote } from '../src/generation.ts';
 import * as repo from '../src/repo.ts';
 import { addUser, memDb } from './helpers.ts';
 
@@ -71,11 +71,12 @@ describe('Worker: Zusammenfassung → Karten', () => {
     expect(figureLines.some((l) => l.includes('3.jpg'))).toBe(true);
   });
 
-  it('hält höchstens 1 Karte pro Folie im Schnitt und 2 pro Folie, Lückentexte mit max. 2 Lücken', async () => {
+  it('hält höchstens 1,25 Karten pro Folie im Schnitt und 2 pro Folie, Lückentexte mit max. 2 Lücken', async () => {
     const { db, deck, drain } = await setup();
     enqueueDeck(db, deck.id);
     await drain();
-    expect(cardCount(db, deck.id)).toBeLessThanOrEqual(PAGES);
+    expect(maxCardsFor(PAGES)).toBe(7);
+    expect(cardCount(db, deck.id)).toBeLessThanOrEqual(7);
     const perSlide = new Map<number, number>();
     for (const n of repo.listNotes(db, { deckId: deck.id })) {
       perSlide.set(n.slideRefs[0]!, (perSlide.get(n.slideRefs[0]!) ?? 0) + n.cards.length);
@@ -169,5 +170,63 @@ describe('sanitizeNote', () => {
   });
   it('verwirft Karten ohne Inhalt', () => {
     expect(sanitizeNote({ ...base, front: '   ' }, 10, 1)).toBeNull();
+  });
+});
+
+describe('Worker: fehlende Karten ergänzen', () => {
+  const twoOnSlide1: ClaudeResult = {
+    ok: true,
+    output: { notes: [1, 2].map((i) => ({ kind: 'qa', front: `Alt ${i}`, back: 'A', slides: [1], frontImagePage: null, tags: [] })) },
+    usage,
+  };
+
+  it('fügt nur hinzu, zählt vorhandene Karten mit und lässt alte Karten samt Lernstand unberührt', async () => {
+    const { db, deck, claude, drain } = await setup({ 2: twoOnSlide1 });
+    enqueueDeck(db, deck.id);
+    await drain();
+    const before = repo.listNotes(db, { deckId: deck.id });
+    expect(before).toHaveLength(2);
+    const userId = addUser(db);
+    repo.insertRevlog(db, { id: 'r1', cardId: before[0]!.cards[0]!.id, rating: 3, reviewedAt: 1, durationMs: 1, deviceId: 'x', revokes: null }, userId);
+
+    expect(enqueueGaps(db, deck.id)).toBe(true);
+    expect(enqueueGaps(db, deck.id)).toBe(false); // wartet schon
+    await drain();
+
+    expect(claude.calls).toHaveLength(3);
+    expect(claude.calls[2]!.model).toBe('opus');
+    expect(claude.calls[2]!.prompt).toContain('] Alt 1 → A');
+    expect(claude.calls[2]!.prompt).toContain('=== Slide 2 ===');
+    expect(claude.calls[2]!.prompt).toContain('at most 5 new cards');
+
+    const after = repo.listNotes(db, { deckId: deck.id });
+    for (const old of before) expect(after.find((n) => n.id === old.id)).toMatchObject({ front: old.front, back: old.back });
+    expect(cardCount(db, deck.id)).toBe(maxCardsFor(PAGES));
+    const onSlide1 = after.filter((n) => n.slideRefs[0] === 1).reduce((s, n) => s + n.cards.length, 0);
+    expect(onSlide1).toBe(2); // Folie 1 war schon voll
+    expect(repo.getDeck(db, deck.id)).toMatchObject({ status: 'ready', error: null });
+    expect(listJobs(db, deck.id).at(-1)).toMatchObject({ kind: 'gaps', status: 'done', usage });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM revlog').get()).toEqual({ n: 1 });
+  });
+
+  it('ruft Claude nicht auf, wenn die Obergrenze schon erreicht ist', async () => {
+    const { db, deck, claude, drain } = await setup();
+    enqueueDeck(db, deck.id);
+    await drain();
+    expect(cardCount(db, deck.id)).toBe(maxCardsFor(PAGES));
+    enqueueGaps(db, deck.id);
+    await drain();
+    expect(claude.calls).toHaveLength(2);
+    expect(listJobs(db, deck.id).at(-1)).toMatchObject({ kind: 'gaps', status: 'done' });
+  });
+
+  it('eine leere Antwort ist ein gültiges Ergebnis', async () => {
+    const { db, deck, drain } = await setup({ 2: twoOnSlide1, 3: { ok: true, output: { notes: [] }, usage } });
+    enqueueDeck(db, deck.id);
+    await drain();
+    enqueueGaps(db, deck.id);
+    await drain();
+    expect(cardCount(db, deck.id)).toBe(2);
+    expect(listJobs(db, deck.id).at(-1)).toMatchObject({ kind: 'gaps', status: 'done' });
   });
 });

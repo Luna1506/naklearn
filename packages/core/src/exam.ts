@@ -43,7 +43,8 @@ export function newCardLimit(o: {
     if (daysBetween(today, o.examDate) > 0) {
       const deadline = addDays(o.examDate, -EXAM_BUFFER_DAYS);
       const days = Math.max(1, daysBetween(today, deadline) + 1);
-      target = Math.max(o.newPerDay, Math.ceil((o.remainingNew + o.introducedToday) / days));
+      // Exakt so viele, dass alles bis zum Puffer gelernt ist; „pro Tag“ gilt nur ohne Prüfung.
+      target = Math.ceil((o.remainingNew + o.introducedToday) / days);
     }
   }
   const limit = Math.max(0, Math.min(o.remainingNew, target - o.introducedToday));

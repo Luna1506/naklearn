@@ -7,7 +7,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z, ZodError } from 'zod';
 import type { Db } from './db.ts';
-import { enqueueDeck, listJobs, regenerateDeck, retryJob, type Worker } from './generation.ts';
+import { enqueueDeck, enqueueGaps, listJobs, regenerateDeck, retryJob, type Worker } from './generation.ts';
 import * as repo from './repo.ts';
 import { answer, getNext, getOverview, undo } from './study.ts';
 import { applyPush, pullSince } from './sync.ts';
@@ -234,6 +234,14 @@ export function buildApp(deps: {
     must(repo.getDeck(db, id), 'Foliensatz');
     const { includeReviewed } = z.object({ includeReviewed: z.boolean().optional() }).parse(req.body ?? {});
     regenerateDeck(db, id, now(), { includeReviewed });
+    worker.wake();
+    return { ok: true };
+  });
+
+  app.post('/api/decks/:id/gaps', async (req) => {
+    const { id } = IdParam.parse(req.params);
+    must(repo.getDeck(db, id), 'Foliensatz');
+    enqueueGaps(db, id, now());
     worker.wake();
     return { ok: true };
   });

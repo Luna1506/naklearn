@@ -24,7 +24,8 @@ describe('persönlicher Lernstand', () => {
   it('Bewertungen von Luna ändern nichts bei Mia', () => {
     const { db, luna, mia, cardId } = setup();
     answer(db, { userId: luna, cardId, rating: 4, durationMs: 1, deviceId: 'web', now: NOW });
-    expect(getNext(db, luna, {}, NOW).counts).toEqual({ learning: 0, review: 0, new: 1 });
+    // Luna: Prüfung in 30 Tagen, 2 Karten → 1 neue pro Tag, heute schon gelernt. Mia: kein Datum → beide neu
+    expect(getNext(db, luna, {}, NOW).counts).toEqual({ learning: 0, review: 0, new: 0 });
     expect(getNext(db, mia, {}, NOW).counts).toEqual({ learning: 0, review: 0, new: 2 });
     expect(getOverview(db, luna, NOW).studiedToday).toBe(1);
     expect(getOverview(db, mia, NOW).studiedToday).toBe(0);

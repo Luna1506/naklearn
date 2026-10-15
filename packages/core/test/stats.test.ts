@@ -20,7 +20,7 @@ describe('moduleStats', () => {
     const cards = [card('a', 0), card('b', 0), card('c', 1), card('d', 2)];
     const s = moduleStats(cards, { id: 'm', examDate: '2026-10-30', newPerDay: 20 }, NOW);
     expect(s).toMatchObject({ total: 4, new: 2, learning: 1, review: 1, seenPct: 50, daysToExam: 24 });
-    expect(s.dueToday).toBe(2); // 2 neue, Lern-/Wiederholungskarte erst morgen
+    expect(s.dueToday).toBe(1); // 2 neue auf 22 Tage → 1 heute, Lern-/Wiederholungskarte erst morgen
   });
 });
 

@@ -5,7 +5,7 @@ import { api, type Job, type JobUsage, type NoteListItem, type WorkerStatus } fr
 import { href, navigate } from '../router.ts';
 
 const KIND: Record<Job['kind'], string> = {
-  render: 'Folien lesen', summary: 'Zusammenfassen', cards: 'Karten erzeugen', chunk: 'Karten (altes Verfahren)', synthesis: 'Synthese (altes Verfahren)',
+  render: 'Folien lesen', summary: 'Zusammenfassen', cards: 'Karten erzeugen', gaps: 'Fehlende Karten ergänzen', chunk: 'Karten (altes Verfahren)', synthesis: 'Synthese (altes Verfahren)',
 };
 
 function usageText(u: JobUsage | null): string {
@@ -94,6 +94,13 @@ export function DeckPage({ id }: { id: string }) {
             }}
           >
             Neu erzeugen
+          </button>
+          <button
+            disabled={active || deck.status !== 'ready'}
+            title="Claude prüft die Folien gegen die vorhandenen Karten und ergänzt nur, was fehlt. Vorhandene Karten bleiben."
+            onClick={async () => { await api.fillGaps(id); await load(); }}
+          >
+            Fehlende Karten ergänzen
           </button>
           <button
             onClick={async () => {

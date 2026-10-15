@@ -130,10 +130,10 @@ export function ModulePage({ id }: { id: string }) {
             </select>
           </label>
           {mine && <label>Prüfungsdatum <input type="date" value={form.examDate} onChange={(e) => setForm({ ...form, examDate: e.target.value })} /></label>}
-          {mine && <label>Neue Karten pro Tag (mindestens) <input type="number" min={0} max={500} value={form.newPerDay} onChange={(e) => setForm({ ...form, newPerDay: Number(e.target.value) })} /></label>}
+          {mine && <label>Neue Karten pro Tag (nur ohne Prüfungsdatum) <input type="number" min={0} max={500} value={form.newPerDay} onChange={(e) => setForm({ ...form, newPerDay: Number(e.target.value) })} /></label>}
           <button className="primary" type="submit">Speichern</button>
         </form>
-        <p className="muted small">Die Sprache gilt für neu erzeugte Karten. Prüfungsdatum und neue Karten pro Tag gelten nur für dich; Name und Sprache für alle. Mit Prüfungsdatum verteilt NAKLearn die neuen Karten so, dass du 3 Tage vorher alles gesehen hast.</p>
+        <p className="muted small">Die Sprache gilt für neu erzeugte Karten. Prüfungsdatum und neue Karten pro Tag gelten nur für dich; Name und Sprache für alle. Mit Prüfungsdatum verteilt NAKLearn die neuen Karten exakt so, dass du 3 Tage vorher alles gesehen hast – fällt ein Tag aus, wird der Rest auf die übrigen Tage verteilt.</p>
         {mine && (
           <button
             onClick={async () => {

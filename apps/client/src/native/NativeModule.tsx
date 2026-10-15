@@ -37,7 +37,7 @@ export function NativeModule({ store, id }: { store: LocalStore; id: string }) {
       <section className="card-form">
         <h2>Einstellungen</h2>
         <label>Prüfungsdatum <input type="date" value={examDate} onChange={(e) => setExamDate(e.target.value)} /></label>
-        <label>Neue Karten pro Tag <input type="number" min={0} max={500} value={newPerDay} onChange={(e) => setNewPerDay(Number(e.target.value))} /></label>
+        <label>Neue Karten pro Tag (nur ohne Prüfungsdatum) <input type="number" min={0} max={500} value={newPerDay} onChange={(e) => setNewPerDay(Number(e.target.value))} /></label>
         <button
           className="primary"
           onClick={async () => {
