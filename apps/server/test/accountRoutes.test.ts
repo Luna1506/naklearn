@@ -104,6 +104,18 @@ describe('App-Login und Geräte', () => {
     });
     expect(browserLogin.statusCode).toBe(403);
   });
+  it.each(['capacitor://localhost', 'ionic://localhost'])('iOS-App mit Origin %s: Login und schreibende Requests mit Token', async (origin) => {
+    const { app } = setup();
+    const headers = { origin, host: 'naklearn.example' };
+    const r = await app.inject({ method: 'POST', url: '/api/device/login', headers, payload: { name: 'mia', password: 'mia-pass-1', deviceName: 'iPhone' } });
+    expect(r.statusCode).toBe(200);
+    const auth = { ...headers, authorization: `Bearer ${r.json().token}` };
+    const created = await app.inject({ method: 'POST', url: '/api/modules', headers: auth, payload: { name: 'Mathe', language: 'de' } });
+    expect(created.statusCode).toBe(200);
+    // ohne Token (Cookie-Sitzung) bleibt die fremde Origin gesperrt
+    expect((await app.inject({ method: 'POST', url: '/api/login', headers, payload: { name: 'mia', password: 'mia-pass-1' } })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'POST', url: '/api/modules', headers, payload: { name: 'X', language: 'de' } })).statusCode).toBe(403);
+  });
   it('fremde Geräte lassen sich nicht entfernen', async () => {
     const { app, db, luna, mia } = setup();
     const { device } = addDevice(db, luna.id, 'Lunas Handy', 0);
