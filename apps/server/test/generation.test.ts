@@ -325,4 +325,20 @@ describe('Worker: deutsche Übersetzung', () => {
     expect(byFront('What')).toMatchObject({ frontDe: 'Was ist IaaS?' });
     expect(listJobs(db, deck.id).at(-1)).toMatchObject({ kind: 'translate', status: 'done' });
   });
+
+  it('übersetzt neu, wenn eine offline gemachte Bearbeitung (alte Uhrzeit) erst nach der Übersetzung ankommt', async () => {
+    const { db, drain, byFront } = await generated({
+      3: translated([{ n: 1, front: 'Was ist IaaS?', back: 'IaaS' }, { n: 2, front: '{{c1::V}} und {{c2::I}}', back: '' }]),
+      4: translated([{ n: 1, front: 'Was ist IaaS genau?', back: 'IaaS' }]),
+    });
+    enqueueMissingTranslations(db, 2_000_000);
+    await drain();
+    expect(byFront('What')).toMatchObject({ frontDe: 'Was ist IaaS?' });
+    // Am Handy um 1_500_000 bearbeitet, erst jetzt synchronisiert: updated_at liegt vor dem letzten Übersetzungs-Job.
+    repo.updateNote(db, byFront('What').id, { front: 'What is IaaS exactly?' }, 1_500_000);
+    expect(enqueueMissingTranslations(db, 3_000_000)).toBe(1);
+    await drain();
+    expect(byFront('What')).toMatchObject({ frontDe: 'Was ist IaaS genau?' });
+  });
 });
+

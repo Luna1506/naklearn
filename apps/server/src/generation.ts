@@ -114,19 +114,22 @@ export function enqueueGaps(db: Db, deckId: string, now = Date.now()): boolean {
 
 /**
  * Reiht pro englischem Foliensatz einen Übersetzungs-Job ein, wenn es eine unübersetzte Karte gibt, die nach dem letzten
- * Übersetzungs-Job entstand oder geändert wurde. Verworfene Übersetzungen und fehlgeschlagene Jobs werden so nicht endlos
- * wiederholt. Liefert die Zahl neuer Jobs.
+ * Übersetzungs-Job entstand oder geändert wurde. Verglichen wird die seq des Servers, nicht `updated_at`: Bearbeitungen
+ * vom Handy tragen dessen Uhrzeit und kommen oft erst später an. Verworfene Übersetzungen und fehlgeschlagene Jobs werden
+ * so nicht endlos wiederholt. Liefert die Zahl neuer Jobs.
  */
 export function enqueueMissingTranslations(db: Db, now = Date.now()): number {
+  const { value: seqNow } = db.prepare("SELECT value FROM meta WHERE key = 'seq'").get() as Row;
   const decks = db.prepare(
     `SELECT d.id FROM deck d JOIN module m ON m.id = d.module_id
      WHERE d.deleted = 0 AND m.deleted = 0 AND m.language = 'en'
        AND NOT EXISTS (SELECT 1 FROM job j WHERE j.deck_id = d.id AND j.kind = 'translate' AND j.status IN ('queued', 'running'))
        AND EXISTS (SELECT 1 FROM note n WHERE n.deck_id = d.id AND n.deleted = 0 AND n.front_de IS NULL
-         AND n.updated_at > COALESCE((SELECT MAX(j.created_at) FROM job j WHERE j.deck_id = d.id AND j.kind = 'translate'), -1))
+         AND n.seq > COALESCE((SELECT MAX(j.seq_at) FROM job j WHERE j.deck_id = d.id AND j.kind = 'translate'), -1))
      ORDER BY d.rowid`,
   ).all() as Row[];
-  for (const d of decks) insertJob(db, d.id, 'translate', now);
+  const ins = db.prepare("INSERT INTO job (id, deck_id, kind, status, created_at, seq_at) VALUES (?, ?, 'translate', 'queued', ?, ?)");
+  for (const d of decks) ins.run(newId(), d.id, now, Number(seqNow));
   return decks.length;
 }
 

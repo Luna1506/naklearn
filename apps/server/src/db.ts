@@ -65,6 +65,10 @@ export const SERVER_MIGRATIONS: string[] = [
   ALTER TABLE revlog ADD COLUMN user_id TEXT;
   CREATE INDEX revlog_user_card ON revlog(user_id, card_id);
   `,
+  // Stand der Änderungsfolge beim Anlegen eines Übersetzungs-Jobs (Server-Reihenfolge statt Geräte-Uhrzeit).
+  `
+  ALTER TABLE job ADD COLUMN seq_at INTEGER;
+  `,
 ];
 
 export function migrateServer(db: Db, migrations: string[] = SERVER_MIGRATIONS): void {

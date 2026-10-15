@@ -57,7 +57,7 @@ export function createChat(deps: { db: Db; dataDir: string; runClaude: RunClaude
       running++;
       const cwd = await mkdtemp(path.join(tmpdir(), 'naklearn-chat-'));
       try {
-        const r = await runClaude({ prompt, addDirs: [slidesDir], cwd, model, timeoutMs: 90_000 }); // Cloudflare bricht nach 100 s ab
+        const r = await runClaude({ prompt, addDirs: [slidesDir], cwd, model, timeoutMs: 55_000 }); // vor dem Proxy-Timeout (Nginx 60 s, Cloudflare 100 s)
         if (r.ok) {
           const answer = String(r.output).trim();
           if (answer) return { ok: true, answer };
