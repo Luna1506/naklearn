@@ -1,5 +1,5 @@
 import type { Card, Deck, Grade, Language, Module, Note, NoteKind, QueueCounts, Scope, StudyCard } from '@naklearn/core';
-import type { StudyDataSource } from '@naklearn/ui';
+import type { ChatMessage, StudyDataSource } from '@naklearn/ui';
 
 export interface ModuleOverview {
   moduleId: string; name: string; language: Language; examDate: string | null; newPerDay: number;
@@ -131,5 +131,9 @@ export class HttpDataSource implements StudyDataSource {
   }
   slideUrl(deckId: string, page: number) {
     return `/api/slides/${deckId}/${page}.jpg`;
+  }
+  async ask(cardId: string, messages: ChatMessage[]) {
+    const r = await request<{ answer: string }>(`/api/cards/${encodeURIComponent(cardId)}/ask`, json('POST', { messages }));
+    return r.answer;
   }
 }

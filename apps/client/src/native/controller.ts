@@ -1,7 +1,7 @@
 import type { Grade, Scope } from '@naklearn/core';
 import { syncStore, type LocalStore, type Transport } from '@naklearn/store';
-import type { StudyDataSource } from '@naklearn/ui';
-import { TokenRejected, deviceLogin, httpTransport } from './transport.ts';
+import type { ChatMessage, StudyDataSource } from '@naklearn/ui';
+import { TokenRejected, askCard, deviceLogin, httpTransport } from './transport.ts';
 
 export interface ImageStore {
   has(deckId: string, page: number): Promise<boolean>;
@@ -135,4 +135,10 @@ export class LocalDataSource implements StudyDataSource {
   updateNote(noteId: string, patch: { front: string; back: string }) { return this.store.updateNote(noteId, patch); }
   deleteNote(noteId: string) { return this.store.deleteNote(noteId); }
   slideUrl(deckId: string, page: number) { return this.images.src(deckId, page); }
+  async ask(cardId: string, messages: ChatMessage[]) {
+    const url = await this.store.getMeta('server_url');
+    const token = await this.store.getMeta('token');
+    if (!url || !token) throw new Error('Nicht angemeldet – bitte in den Einstellungen anmelden.');
+    return askCard(url, token, cardId, messages);
+  }
 }

@@ -6,6 +6,17 @@ import { RatingBar } from './RatingBar.tsx';
 import { SlideStrip } from './SlideStrip.tsx';
 import type { StudyDataSource } from './source.ts';
 import { Lightbox } from './Lightbox.tsx';
+import { CardChat } from './CardChat.tsx';
+
+const LANG_KEY = 'naklearn.lang';
+
+function storedLang(): 'en' | 'de' {
+  try {
+    return window.localStorage.getItem(LANG_KEY) === 'de' ? 'de' : 'en';
+  } catch {
+    return 'en';
+  }
+}
 
 export function StudyView({
   source,
@@ -27,6 +38,8 @@ export function StudyView({
   const [editing, setEditing] = useState(false);
   const [bigFront, setBigFront] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lang, setLang] = useState<'en' | 'de'>(storedLang);
+  const [chatOpen, setChatOpen] = useState(false);
   const shownAt = useRef(Date.now());
   const { moduleId, deckId } = scope;
 
@@ -37,6 +50,7 @@ export function StudyView({
       setCard(r.card);
       setCounts(r.counts);
       setRevealed(false);
+      setChatOpen(false);
       shownAt.current = Date.now();
       setError(null);
     } catch (e) {
@@ -105,6 +119,22 @@ export function StudyView({
     });
   }, [card, run, source, load]);
 
+  const hasGerman = card?.frontDe != null;
+  const toggleLang = useCallback(() => {
+    setLang((l) => {
+      const next = l === 'de' ? 'en' : 'de';
+      try {
+        window.localStorage.setItem(LANG_KEY, next);
+      } catch {
+        // Einstellung gilt dann nur für diese Sitzung
+      }
+      return next;
+    });
+  }, []);
+  const showGerman = lang === 'de' && hasGerman;
+  const front = card ? (showGerman ? card.frontDe! : card.front) : '';
+  const back = card ? (showGerman ? card.backDe ?? '' : card.back) : '';
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (editing || bigFront) return;
@@ -125,6 +155,11 @@ export function StudyView({
         setEditing(true);
       } else if (e.key === 'p') {
         suspend();
+      } else if (e.key === 't' && hasGerman) {
+        toggleLang();
+      } else if (e.key === 'f' && card) {
+        e.preventDefault();
+        setChatOpen(true);
       } else if (e.key === 'Delete') {
         remove();
       } else if (e.key === 'Escape') {
@@ -133,7 +168,7 @@ export function StudyView({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [card, revealed, rate, undoLast, suspend, remove, editing, bigFront, onExit]);
+  }, [card, revealed, rate, undoLast, suspend, remove, editing, bigFront, onExit, hasGerman, toggleLang]);
 
   return (
     <div className="study">
@@ -163,7 +198,15 @@ export function StudyView({
       {card && (
         <>
           <div className="study-meta">
-            {card.moduleName} · {card.deckTitle}
+            <span>{card.moduleName} · {card.deckTitle}</span>
+            <button
+              className="lang-toggle"
+              onClick={toggleLang}
+              disabled={!hasGerman}
+              title={hasGerman ? 'Sprache umschalten (t)' : 'Übersetzung folgt'}
+            >
+              {lang === 'de' ? 'Englisch' : 'Deutsch'} <kbd>t</kbd>
+            </button>
           </div>
           <article className={`study-card kind-${card.kind}`}>
             {card.frontImagePage !== null && (
@@ -171,15 +214,17 @@ export function StudyView({
                 <img src={source.slideUrl(card.deckId, card.frontImagePage)} alt={`Folie ${card.frontImagePage} (Vorderseite)`} />
               </button>
             )}
-            <Markdown text={card.front} className="front" />
+            <Markdown text={front} className="front" />
             {revealed && (
               <>
                 <hr />
-                <Markdown text={card.back} className="back" />
+                <Markdown text={back} className="back" />
                 <SlideStrip deckId={card.deckId} pages={card.slides} slideUrl={(deckId, page) => source.slideUrl(deckId, page)} />
               </>
             )}
           </article>
+
+          {chatOpen && <CardChat key={card.cardId} source={source} cardId={card.cardId} />}
 
           <footer className="study-footer">
             {!revealed ? (
@@ -192,6 +237,7 @@ export function StudyView({
             <div className="study-tools">
               <button onClick={undoLast} disabled={!lastRevlog || busy}>Rückgängig <kbd>z</kbd></button>
               <button onClick={() => setEditing(true)}>Bearbeiten <kbd>e</kbd></button>
+              <button onClick={() => setChatOpen(true)} disabled={chatOpen}>Frage stellen <kbd>f</kbd></button>
               <button onClick={suspend} disabled={busy}>Pausieren <kbd>p</kbd></button>
               <button className="danger" onClick={remove} disabled={busy}>Löschen <kbd>Entf</kbd></button>
             </div>

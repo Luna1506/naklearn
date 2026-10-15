@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { StudyCard } from '@naklearn/core';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StudyDataSource } from '../src/source.ts';
 import { StudyView } from '../src/StudyView.tsx';
 
@@ -11,6 +11,10 @@ function card(id: string): StudyCard {
     intervals: { 1: '1m', 2: '6m', 3: '10m', 4: '3d' }, noteFront: `Frage ${id}`, noteBack: `Antwort ${id}`,
     frontDe: null, backDe: null,
   };
+}
+
+function deCard(id: string): StudyCard {
+  return { ...card(id), frontDe: `Deutsche Frage ${id}`, backDe: `Deutsche Antwort ${id}` };
 }
 
 function fakeSource(cards: StudyCard[]): StudyDataSource & { answered: unknown[] } {
@@ -31,8 +35,11 @@ function fakeSource(cards: StudyCard[]): StudyDataSource & { answered: unknown[]
       queue.shift();
     }),
     slideUrl: (deckId, page) => `/slides/${deckId}/${page}.jpg`,
+    ask: vi.fn(async (_cardId, messages) => `Antwort auf: ${messages.at(-1)!.content}`),
   };
 }
+
+beforeEach(() => window.localStorage.clear());
 
 describe('StudyView', () => {
   it('zeigt Vorderseite, deckt per Knopf auf und bewertet per Taste', async () => {
@@ -107,7 +114,7 @@ describe('StudyView', () => {
       private base = '/img';
       private inner = fakeSource([card('1')]);
       next = this.inner.next; answer = this.inner.answer; undo = this.inner.undo;
-      setSuspended = this.inner.setSuspended; updateNote = this.inner.updateNote; deleteNote = this.inner.deleteNote;
+      setSuspended = this.inner.setSuspended; updateNote = this.inner.updateNote; deleteNote = this.inner.deleteNote; ask = this.inner.ask;
       slideUrl(deckId: string, page: number) { return `${this.base}/${deckId}/${page}.jpg`; }
     }
     render(<StudyView source={new ClassSource()} scope={{}} title="Heute" onExit={() => {}} />);
@@ -126,4 +133,68 @@ describe('StudyView', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Rückgängig/ })); });
     expect(src.undo).toHaveBeenCalledWith('r-1');
   });
+
+  it('schaltet auf Deutsch um (Knopf und Taste t) und merkt sich die Wahl', async () => {
+    const src = fakeSource([deCard('1'), deCard('2')]);
+    const { unmount } = render(<StudyView source={src} scope={{}} title="Heute" onExit={() => {}} />);
+    await screen.findByText('Frage 1');
+    fireEvent.click(screen.getByRole('button', { name: /Deutsch/ }));
+    expect(screen.getByText('Deutsche Frage 1')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Antwort zeigen/ }));
+    expect(screen.getByText('Deutsche Antwort 1')).toBeTruthy();
+    await act(async () => { fireEvent.keyDown(window, { key: 't' }); });
+    expect(screen.getByText('Frage 1')).toBeTruthy();
+    await act(async () => { fireEvent.keyDown(window, { key: 't' }); });
+    unmount();
+    render(<StudyView source={fakeSource([deCard('1')])} scope={{}} title="Heute" onExit={() => {}} />);
+    expect(await screen.findByText('Deutsche Frage 1')).toBeTruthy();
+  });
+
+  it('ohne Übersetzung bleibt das Original und der Knopf ist gesperrt', async () => {
+    window.localStorage.setItem('naklearn.lang', 'de');
+    render(<StudyView source={fakeSource([card('1')])} scope={{}} title="Heute" onExit={() => {}} />);
+    expect(await screen.findByText('Frage 1')).toBeTruthy();
+    const btn = screen.getByRole('button', { name: /Deutsch|Englisch/ }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toMatch(/Übersetzung folgt/);
+  });
+
+  it('Frage stellen: schickt den Verlauf, zeigt die Antwort, neue Karte = neuer Chat', async () => {
+    const src = fakeSource([card('1'), card('2')]);
+    render(<StudyView source={src} scope={{}} title="Heute" onExit={() => {}} />);
+    await screen.findByText('Frage 1');
+    await act(async () => { fireEvent.keyDown(window, { key: 'f' }); });
+    const box = screen.getByRole('textbox', { name: /Frage an Claude/ });
+    fireEvent.change(box, { target: { value: 'Warum?' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Senden/ })); });
+    expect(await screen.findByText('Antwort auf: Warum?')).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox', { name: /Frage an Claude/ }), { target: { value: 'Und dann?' } });
+    await act(async () => { fireEvent.keyDown(screen.getByRole('textbox', { name: /Frage an Claude/ }), { key: 'Enter' }); });
+    expect(await screen.findByText('Antwort auf: Und dann?')).toBeTruthy();
+    expect(src.ask).toHaveBeenLastCalledWith('1', [
+      { role: 'user', content: 'Warum?' },
+      { role: 'assistant', content: 'Antwort auf: Warum?' },
+      { role: 'user', content: 'Und dann?' },
+    ]);
+    // Tippen im Chat löst keine Lernaktionen aus
+    await act(async () => { fireEvent.keyDown(screen.getByRole('textbox', { name: /Frage an Claude/ }), { key: '3' }); });
+    expect(src.answered).toEqual([]);
+
+    fireEvent.click(screen.getByRole('button', { name: /Antwort zeigen/ }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Gut/ })); });
+    await screen.findByText('Frage 2');
+    expect(screen.queryByText('Antwort auf: Warum?')).toBeNull();
+  });
+
+  it('zeigt Fehler beim Fragen im Chat', async () => {
+    const src = fakeSource([card('1')]);
+    (src.ask as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Claude-Limit erreicht'));
+    render(<StudyView source={src} scope={{}} title="Heute" onExit={() => {}} />);
+    await screen.findByText('Frage 1');
+    fireEvent.click(screen.getByRole('button', { name: /Frage stellen/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Frage an Claude/ }), { target: { value: 'Hallo' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Senden/ })); });
+    expect(await screen.findByText(/Claude-Limit erreicht/)).toBeTruthy();
+  });
 });
+

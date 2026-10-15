@@ -1,4 +1,5 @@
 import type { Transport } from '@naklearn/store';
+import type { ChatMessage } from '@naklearn/ui';
 
 export const DEFAULT_SERVER = 'https://naklearn.torte-tech.de';
 
@@ -45,3 +46,24 @@ export function httpTransport(url: string, token: string, fetchImpl: typeof fetc
     }
   };
 }
+
+/** Frage an Claude zu einer Karte (braucht Internet). */
+export async function askCard(
+  url: string, token: string, cardId: string, messages: ChatMessage[], fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetchImpl(`${url.replace(/\/+$/, '')}/api/cards/${encodeURIComponent(cardId)}/ask`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ messages }),
+    });
+  } catch {
+    throw new Error('Keine Verbindung – für Fragen an Claude braucht die App Internet.');
+  }
+  if (res.status === 401) throw new TokenRejected();
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error ?? `Frage fehlgeschlagen (HTTP ${res.status})`);
+  return String(body?.answer ?? '');
+}
+
