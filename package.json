@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "npm run test --workspaces --if-present && node --test scripts/release.test.ts scripts/migrate-to-torte.test.ts",
+    "test": "npm run test --workspaces --if-present && node --test scripts/release.test.ts scripts/migrate-to-torte.test.ts scripts/ios-source.test.ts",
     "typecheck": "tsc -p tsconfig.json",
     "dev:server": "npm run dev -w @naklearn/server",
     "dev:client": "npm run dev -w @naklearn/client",
