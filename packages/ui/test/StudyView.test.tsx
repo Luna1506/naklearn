@@ -196,5 +196,28 @@ describe('StudyView', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Senden/ })); });
     expect(await screen.findByText(/Claude-Limit erreicht/)).toBeTruthy();
   });
+
+  it('blendet die Antwort per Knopf und Taste a wieder aus', async () => {
+    const src = fakeSource([card('1')]);
+    render(<StudyView source={src} scope={{}} title="Heute" onExit={() => {}} />);
+    await screen.findByText('Frage 1');
+    expect(screen.queryByRole('button', { name: /Antwort ausblenden/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Antwort zeigen/ }));
+    expect(screen.getByText('Antwort 1')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Antwort ausblenden/ }));
+    expect(screen.queryByText('Antwort 1')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Gut/ })).toBeNull();
+    await act(async () => {
+      fireEvent.keyDown(window, { key: '3' });
+    });
+    expect(src.answered).toEqual([]);
+
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(screen.getByText('Antwort 1')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(screen.queryByText('Antwort 1')).toBeNull();
+    expect(screen.getByRole('button', { name: /Antwort zeigen/ })).toBeTruthy();
+  });
 });
 

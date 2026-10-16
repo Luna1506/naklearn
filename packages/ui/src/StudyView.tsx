@@ -147,6 +147,8 @@ export function StudyView({
         if (!card) return;
         if (!revealed) setRevealed(true);
         else rate(3);
+      } else if (e.key === 'a' && card) {
+        setRevealed((r) => !r);
       } else if (['1', '2', '3', '4'].includes(e.key)) {
         rate(Number(e.key) as Grade);
       } else if (e.key === 'z') {
@@ -235,6 +237,7 @@ export function StudyView({
               <RatingBar intervals={card.intervals} onRate={rate} disabled={busy} />
             )}
             <div className="study-tools">
+              {revealed && <button onClick={() => setRevealed(false)}>Antwort ausblenden <kbd>a</kbd></button>}
               <button onClick={undoLast} disabled={!lastRevlog || busy}>Rückgängig <kbd>z</kbd></button>
               <button onClick={() => setEditing(true)}>Bearbeiten <kbd>e</kbd></button>
               <button onClick={() => setChatOpen(true)} disabled={chatOpen}>Frage stellen <kbd>f</kbd></button>
