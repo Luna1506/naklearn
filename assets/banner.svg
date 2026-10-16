@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-label="NAKLearn: aus Foliensätzen werden Lernkarten. Links die Pipeline PDF, Claude, Karten, Handy; rechts eine Lernkarte, die aufgedeckt und mit Gut bewertet wird.">
+  <defs>
+    <clipPath id="card"><rect width="1200" height="440" rx="22"/></clipPath>
+    <clipPath id="study"><rect x="620" y="40" width="540" height="362" rx="22"/></clipPath>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="70"/></filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="12" cy="12" r="1" fill="#fff" fill-opacity="0.07"/>
+    </pattern>
+    <linearGradient id="title" x1="0" x2="1">
+      <stop offset="0" stop-color="#c9c0ff"/>
+      <stop offset="1" stop-color="#8f7dff"/>
+    </linearGradient>
+  </defs>
+
+  <style>
+    .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .mono { font-family: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+
+  <g clip-path="url(#card)">
+    <rect width="1200" height="440" fill="#0f0f12"/>
+    <g filter="url(#soft)" opacity="0.6">
+      <circle cx="160" cy="420" r="170" fill="#a89bff">
+        <animateTransform attributeName="transform" type="translate" dur="20s" repeatCount="indefinite"
+          values="0 0; 140 -70; 30 20; 0 0" keyTimes="0;0.35;0.7;1" calcMode="spline"
+          keySplines="0.45 0 0.55 1;0.45 0 0.55 1;0.45 0 0.55 1"/>
+      </circle>
+      <circle cx="1080" cy="40" r="170" fill="#6ea0ff">
+        <animateTransform attributeName="transform" type="translate" dur="24s" repeatCount="indefinite"
+          values="0 0; -150 70; -40 -20; 0 0" keyTimes="0;0.4;0.7;1" calcMode="spline"
+          keySplines="0.45 0 0.55 1;0.45 0 0.55 1;0.45 0 0.55 1"/>
+      </circle>
+      <circle cx="660" cy="470" r="120" fill="#5fd08f" opacity="0.6">
+        <animateTransform attributeName="transform" type="translate" dur="18s" repeatCount="indefinite"
+          values="0 0; 90 -90; -60 -30; 0 0" keyTimes="0;0.3;0.7;1" calcMode="spline"
+          keySplines="0.45 0 0.55 1;0.45 0 0.55 1;0.45 0 0.55 1"/>
+      </circle>
+    </g>
+    <rect width="1200" height="440" fill="url(#dots)"/>
+
+    <!-- ============ links: Titel + Pipeline ============ -->
+    <g class="sans" fill="#ececf0">
+      <text x="56" y="82" class="mono" font-size="13" fill-opacity="0.45">naklearn.torte-tech.de</text>
+      <text x="52" y="160" font-size="82" font-weight="800" letter-spacing="-2.5">NAK<tspan fill="url(#title)">Learn</tspan></text>
+      <text x="56" y="204" font-size="22" font-weight="600">Folien rein. Lernkarten raus.</text>
+      <text x="56" y="232" font-size="15" fill-opacity="0.6">Claude schreibt die Karten, FSRS plant die Wiederholungen.</text>
+    </g>
+
+    <!-- Verbindungen mit wandernden Punkten -->
+    <g stroke="#ececf0" stroke-opacity="0.22" stroke-width="2" stroke-dasharray="3 6" stroke-linecap="round">
+      <line x1="122" y1="300" x2="170" y2="300"/>
+      <line x1="242" y1="300" x2="290" y2="300"/>
+      <line x1="362" y1="300" x2="410" y2="300"/>
+    </g>
+    <circle cy="300" r="4" fill="#ececf0"><animate attributeName="cx" values="122;170" dur="1.4s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.2;0.8;1" dur="1.4s" repeatCount="indefinite"/></circle>
+    <circle cy="300" r="4" fill="#e3936f"><animate attributeName="cx" values="242;290" dur="1.4s" begin="0.45s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.2;0.8;1" dur="1.4s" begin="0.45s" repeatCount="indefinite"/></circle>
+    <circle cy="300" r="4" fill="#5fd08f"><animate attributeName="cx" values="362;410" dur="1.4s" begin="0.9s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.2;0.8;1" dur="1.4s" begin="0.9s" repeatCount="indefinite"/></circle>
+
+    <g fill="#1e1e22" fill-opacity="0.85" stroke="#ececf0" stroke-opacity="0.16">
+      <rect x="58" y="268" width="64" height="64" rx="16"/>
+      <rect x="178" y="268" width="64" height="64" rx="16"/>
+      <rect x="298" y="268" width="64" height="64" rx="16"/>
+      <rect x="418" y="268" width="64" height="64" rx="16"/>
+    </g>
+    <!-- PDF -->
+    <path d="M78 282 h17 l9 9 v27 h-26 z M95 282 v9 h9" fill="none" stroke="#ececf0" stroke-width="2" stroke-linejoin="round"/>
+    <text x="91" y="311" class="sans" font-size="8.5" font-weight="800" fill="#ff7b7b" text-anchor="middle">PDF</text>
+    <!-- Claude-Funke -->
+    <g transform="translate(210 300)" stroke="#e3936f" stroke-width="3.6" stroke-linecap="round">
+      <g>
+        <line x1="0" y1="-15" x2="0" y2="15"/>
+        <line x1="-15" y1="0" x2="15" y2="0"/>
+        <line x1="-10.6" y1="-10.6" x2="10.6" y2="10.6"/>
+        <line x1="-10.6" y1="10.6" x2="10.6" y2="-10.6"/>
+        <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="14s" repeatCount="indefinite"/>
+      </g>
+    </g>
+    <!-- Karten -->
+    <rect x="312" y="284" width="30" height="22" rx="4" fill="#2e2a52" stroke="#a89bff" stroke-width="1.6" transform="rotate(-10 327 295)"/>
+    <rect x="318" y="292" width="30" height="22" rx="4" fill="#1e1e22" stroke="#ececf0" stroke-width="1.8"/>
+    <line x1="324" y1="300" x2="342" y2="300" stroke="#ececf0" stroke-opacity="0.5" stroke-width="1.5"/>
+    <line x1="324" y1="306" x2="336" y2="306" stroke="#ececf0" stroke-opacity="0.5" stroke-width="1.5"/>
+    <!-- Handy -->
+    <rect x="438" y="280" width="24" height="40" rx="6" fill="none" stroke="#ececf0" stroke-width="2"/>
+    <rect x="442" y="287" width="16" height="22" rx="2" fill="#a89bff" fill-opacity="0.35"/>
+    <circle cx="450" cy="314" r="1.6" fill="#ececf0"/>
+
+    <g class="sans" font-size="12" fill="#ececf0" fill-opacity="0.55" text-anchor="middle">
+      <text x="90" y="352">Folien</text>
+      <text x="210" y="352">Sonnet + Opus</text>
+      <text x="330" y="352">Karten</text>
+      <text x="450" y="352">Handy</text>
+    </g>
+
+    <g class="sans" font-size="12.5" fill="#ececf0">
+      <rect x="58" y="374" width="50" height="26" rx="13" fill="#fff" fill-opacity="0.05" stroke="#fff" stroke-opacity="0.22"/>
+      <text x="83" y="391.5" text-anchor="middle">Web</text>
+      <rect x="116" y="374" width="72" height="26" rx="13" fill="#fff" fill-opacity="0.05" stroke="#fff" stroke-opacity="0.22"/>
+      <text x="152" y="391.5" text-anchor="middle">Android</text>
+      <rect x="196" y="374" width="44" height="26" rx="13" fill="#fff" fill-opacity="0.05" stroke="#fff" stroke-opacity="0.22"/>
+      <text x="218" y="391.5" text-anchor="middle">iOS</text>
+      <rect x="248" y="374" width="66" height="26" rx="13" fill="#5fd08f" fill-opacity="0.12" stroke="#5fd08f" stroke-opacity="0.7"/>
+      <text x="281" y="391.5" text-anchor="middle" fill="#a8f0c6">offline</text>
+      <rect x="322" y="374" width="56" height="26" rx="13" fill="#a89bff" fill-opacity="0.14" stroke="#a89bff" stroke-opacity="0.8"/>
+      <text x="350" y="391.5" text-anchor="middle" fill="#d6d0ff">FSRS</text>
+    </g>
+
+    <!-- ============ rechts: Lernansicht ============ -->
+    <rect x="620" y="40" width="540" height="362" rx="22" fill="#1e1e22" filter="url(#shadow)"/>
+    <rect x="620.5" y="40.5" width="539" height="361" rx="21.5" fill="none" stroke="#fff" stroke-opacity="0.12"/>
+
+    <g class="sans" fill="#ececf0">
+      <text x="646" y="78" font-size="14" fill-opacity="0.55">← Zurück</text>
+      <text x="890" y="78" font-size="15" font-weight="700" text-anchor="middle">Heute</text>
+      <g font-size="14" font-weight="700" text-anchor="end">
+        <text x="1080" y="78" fill="#6ea0ff">12</text>
+        <text x="1104" y="78" fill="#ff7b7b">3</text>
+        <text x="1134" y="78" fill="#5fd08f">8</text>
+      </g>
+      <line x1="646" y1="94" x2="1134" y2="94" stroke="#34343b"/>
+    </g>
+
+    <g clip-path="url(#study)">
+      <!-- Karte A: Frage/Antwort -->
+      <g class="sans" fill="#ececf0" opacity="0">
+        <animate attributeName="opacity" dur="16s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0;0.03125;0.4375;0.475;1"/>
+        <animateTransform attributeName="transform" type="translate" dur="16s" repeatCount="indefinite" values="40 0;0 0;0 0;-40 0;-40 0" keyTimes="0;0.03125;0.4375;0.475;1"/>
+        <text x="646" y="122" font-size="12" fill-opacity="0.5">Cloud Security · Shared Responsibility</text>
+        <rect x="1060" y="108" width="74" height="22" rx="11" fill="none" stroke="#fff" stroke-opacity="0.18"/>
+        <text x="1097" y="123" font-size="11" text-anchor="middle" fill-opacity="0.7">Deutsch  t</text>
+        <text x="646" y="166" font-size="21" font-weight="650">Wer ist bei IaaS für das Patchen des</text>
+        <text x="646" y="194" font-size="21" font-weight="650">Gast-Betriebssystems zuständig?</text>
+        <g opacity="0">
+          <animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" values="0;1;0" keyTimes="0;0.1625;0.5"/>
+          <line x1="646" y1="214" x2="1134" y2="214" stroke="#34343b"/>
+          <text x="646" y="244" font-size="15.5"><tspan font-weight="700">Der Kunde.</tspan><tspan fill-opacity="0.85"> Der Provider sichert Hardware, Netz</tspan></text>
+          <text x="646" y="268" font-size="15.5" fill-opacity="0.85">und Hypervisor. Ab dem Gast-OS liegt alles beim</text>
+          <text x="646" y="292" font-size="15.5" fill-opacity="0.85">Kunden.</text>
+          <g font-size="10.5" fill-opacity="0.6">
+            <rect x="646" y="304" width="44" height="26" rx="4" fill="#2a2a30" stroke="#34343b"/>
+            <text x="668" y="321" text-anchor="middle">Folie 12</text>
+            <rect x="696" y="304" width="44" height="26" rx="4" fill="#2a2a30" stroke="#34343b"/>
+            <text x="718" y="321" text-anchor="middle">Folie 13</text>
+          </g>
+        </g>
+      </g>
+
+      <!-- Karte B: Lückentext -->
+      <g class="sans" fill="#ececf0" opacity="0">
+        <animate attributeName="opacity" dur="16s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.5;0.53125;0.9375;0.975;1"/>
+        <animateTransform attributeName="transform" type="translate" dur="16s" repeatCount="indefinite" values="40 0;40 0;0 0;0 0;-40 0;-40 0" keyTimes="0;0.5;0.53125;0.9375;0.975;1"/>
+        <text x="646" y="122" font-size="12" fill-opacity="0.5">Cloud Security · Grundlagen · Lückentext</text>
+        <rect x="1060" y="108" width="74" height="22" rx="11" fill="none" stroke="#fff" stroke-opacity="0.18"/>
+        <text x="1097" y="123" font-size="11" text-anchor="middle" fill-opacity="0.7">Deutsch  t</text>
+        <text x="646" y="166" font-size="21" font-weight="650">Die drei Schutzziele: Vertraulichkeit,</text>
+        <text x="646" y="194" font-size="21" font-weight="650">
+          <animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" values="1;0;1" keyTimes="0;0.6625;0.98"/>
+          <tspan fill="#a89bff">[ … ]</tspan> und Verfügbarkeit.</text>
+        <g opacity="0">
+          <animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" values="0;1;0" keyTimes="0;0.6625;0.98"/>
+          <text x="646" y="194" font-size="21" font-weight="650"><tspan font-weight="800" fill="#a89bff">Integrität</tspan> und Verfügbarkeit.</text>
+          <line x1="646" y1="214" x2="1134" y2="214" stroke="#34343b"/>
+          <text x="646" y="244" font-size="15.5" fill-opacity="0.85">Daten bleiben vollständig und unverändert.</text>
+          <text x="646" y="268" font-size="15.5" fill-opacity="0.5">Zusammen: die CIA-Triade.</text>
+        </g>
+      </g>
+    </g>
+
+    <!-- Fußleiste: "Antwort zeigen" bzw. Bewertung -->
+    <g class="sans">
+      <g>
+        <animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" values="1;0;1;0" keyTimes="0;0.1625;0.5;0.6625"/>
+        <rect x="646" y="340" width="488" height="44" rx="11" fill="#a89bff"/>
+        <rect x="646" y="340" width="488" height="44" rx="11" fill="#fff" opacity="0">
+          <animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" values="0;0.25;0;0.25;0" keyTimes="0;0.1375;0.1625;0.6375;0.6625"/>
+        </rect>
+        <text x="890" y="367" font-size="16" font-weight="700" fill="#141416" text-anchor="middle">Antwort zeigen<tspan font-size="11" font-weight="500" fill-opacity="0.6">   Leertaste</tspan></text>
+      </g>
+      <g opacity="0">
+        <animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" values="0;1;0;1;0" keyTimes="0;0.1625;0.475;0.6625;0.975"/>
+        <g fill="#141416" stroke-width="1.5">
+          <rect x="646" y="340" width="115" height="46" rx="11" stroke="#ff7b7b"/>
+          <rect x="770.3" y="340" width="115" height="46" rx="11" stroke="#e3b04b"/>
+          <rect x="894.6" y="340" width="115" height="46" rx="11" stroke="#5fd08f"/>
+          <rect x="1019" y="340" width="115" height="46" rx="11" stroke="#6ea0ff"/>
+        </g>
+        <rect x="894.6" y="340" width="115" height="46" rx="11" fill="#5fd08f" opacity="0">
+          <animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" values="0;0.35;0;0.35;0" keyTimes="0;0.4;0.475;0.9;0.975"/>
+        </rect>
+        <g font-size="15" fill="#ececf0" text-anchor="middle">
+          <text x="703.5" y="378">Nochmal</text>
+          <text x="827.8" y="378">Schwer</text>
+          <text x="952.1" y="378">Gut</text>
+          <text x="1076.5" y="378">Einfach</text>
+        </g>
+        <g font-size="11" fill="#9a9aa3" text-anchor="middle">
+          <g>
+            <animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" values="1;0" keyTimes="0;0.5"/>
+            <text x="703.5" y="358">10m</text><text x="827.8" y="358">2d</text><text x="952.1" y="358">5d</text><text x="1076.5" y="358">12d</text>
+          </g>
+          <g opacity="0">
+            <animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" values="0;1" keyTimes="0;0.5"/>
+            <text x="703.5" y="358">1m</text><text x="827.8" y="358">6m</text><text x="952.1" y="358">10m</text><text x="1076.5" y="358">3d</text>
+          </g>
+        </g>
+      </g>
+
+      <!-- Tipp-Wellen -->
+      <circle cx="890" cy="362" r="0" fill="#fff" opacity="0">
+        <animate attributeName="r" dur="16s" repeatCount="indefinite" values="0;0;30;0;0;30;0;0" keyTimes="0;0.1375;0.16875;0.169;0.6375;0.66875;0.669;1"/>
+        <animate attributeName="opacity" dur="16s" repeatCount="indefinite" values="0;0.55;0;0;0.55;0;0;0" keyTimes="0;0.1375;0.16875;0.169;0.6375;0.66875;0.669;1"/>
+      </circle>
+      <circle cx="952.1" cy="363" r="0" fill="#5fd08f" opacity="0">
+        <animate attributeName="r" dur="16s" repeatCount="indefinite" values="0;0;30;0;0;30;0;0" keyTimes="0;0.4;0.43125;0.432;0.9;0.93125;0.932;1"/>
+        <animate attributeName="opacity" dur="16s" repeatCount="indefinite" values="0;0.6;0;0;0.6;0;0;0" keyTimes="0;0.4;0.43125;0.432;0.9;0.93125;0.932;1"/>
+      </circle>
+    </g>
+  </g>
+</svg>
